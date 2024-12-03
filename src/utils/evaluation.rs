@@ -15,7 +15,11 @@ fn minimax_alpha_beta(
     only_captures: bool,
     captures_first: bool,
 ) -> i32 {
-    if depth == 0 {
+    if scenario.white_lost() {
+        return i32::MIN;
+    } else if scenario.black_lost() {
+        return i32::MAX;
+    } else if depth == 0 {
         let static_eval = StaticEval::static_evaluate(&scenario.board);
         return static_eval.white - static_eval.black;
     }

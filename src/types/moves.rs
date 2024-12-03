@@ -1,10 +1,10 @@
 use std::ops::Deref;
 
-use crate::{moves::generator, utils::static_evaluation::StaticEval};
+use crate::moves::generator;
 
 use super::{
     board::Board,
-    piece::{Bitboard, Piece},
+    piece::{self, Bitboard, Color, Piece},
 };
 
 #[derive(Debug, Clone)]
@@ -72,5 +72,27 @@ impl Scenario {
         }
 
         scenarios
+    }
+
+    pub fn white_lost(&self) -> bool {
+        self.board
+            .position
+            .bitboard_by_piece(Piece {
+                color: Color::White,
+                kind: piece::Kind::King,
+            })
+            .bits
+            == 0
+    }
+
+    pub fn black_lost(&self) -> bool {
+        self.board
+            .position
+            .bitboard_by_piece(Piece {
+                color: Color::Black,
+                kind: piece::Kind::King,
+            })
+            .bits
+            == 0
     }
 }

@@ -10,6 +10,13 @@ mod utils;
 // 3k4/8/7p/2p1p1pP/1pPpPpP1/1P1P1P2/N7/2K5 w - - 0 1
 // r1b1kbnr/pppp1ppp/2n2q2/4p3/2BPP3/5N2/PPP2PPP/RNBQK2R b KQkq - 2 4
 
+/*
+TODO:
+- Recognize when a match is over. At the moment the evaluation keeps going. If a king gets captured but the other side can re-capture it looks like its equal.
+- Consider castling move
+- Consider en passant moves
+*/
+
 fn main() -> Result<(), anyhow::Error> {
     tracing_subscriber::fmt::init();
 
@@ -21,7 +28,7 @@ fn main() -> Result<(), anyhow::Error> {
             .read_line(&mut buffer)
             .expect("failed to read user input");
 
-        let Ok(position) = Board::from_forsyth_edwards(&buffer.trim()) else {
+        let Ok(position) = Board::from_forsyth_edwards(buffer.trim()) else {
             tracing::error!("error parsing position. Please insert a valid position");
             continue;
         };
