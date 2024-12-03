@@ -1,6 +1,5 @@
-use std::env;
+use std::io;
 
-use anyhow::Context;
 use types::{board::Board, moves::Scenario};
 use utils::evaluation;
 
@@ -14,18 +13,44 @@ mod utils;
 fn main() -> Result<(), anyhow::Error> {
     tracing_subscriber::fmt::init();
 
-    let args = env::args();
-    let position = utils::position_from_args(args);
+    let board = loop {
+        tracing::info!("insert the position in Forsyth Edwards notation");
 
-    let board = Board::from_forsyth_edwards(
-        &position
-    ).context("failed to convert arguments to a valid chess position")?;
+        let mut buffer = String::new();
+        io::stdin()
+            .read_line(&mut buffer)
+            .expect("failed to read user input");
+
+        let Ok(position) = Board::from_forsyth_edwards(&buffer.trim()) else {
+            tracing::error!("error parsing position. Please insert a valid position");
+            continue;
+        };
+
+        break position;
+    };
+
+    let depth = loop {
+        tracing::info!("insert evaluation depth");
+
+        let mut buffer = String::new();
+        io::stdin()
+            .read_line(&mut buffer)
+            .expect("failed to read user input");
+
+        let Ok(depth) = buffer.trim().parse::<u8>() else {
+            tracing::error!("error! please insert a valid depth");
+            continue;
+        };
+
+        break depth;
+    };
 
     tracing::info!("evaluating position: \n{}", board);
 
     let scenario = Scenario::from_board(board);
     tracing::info!("start minimax evaluation...");
-    let eval = evaluation::parallel_minimax_alpha_beta(&scenario, 6, i32::MIN, i32::MAX, false);
+    let eval =
+        evaluation::parallel_minimax_alpha_beta(&scenario, depth, i32::MIN, i32::MAX, false, true);
     tracing::info!("suggested move: \n{}", eval.1.board);
     tracing::info!("evaluation: {}", eval.0);
     tracing::info!("minimax evaluation finished");

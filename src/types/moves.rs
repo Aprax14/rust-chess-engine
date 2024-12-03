@@ -47,8 +47,12 @@ impl Scenario {
         Self { board }
     }
 
-    pub fn generate_moves(&self, only_captures: bool) -> MovesByPiece {
-        generator::generate_moves(&self.board, only_captures)
+    pub fn generate_moves(&self, only_captures: bool, captures_first: bool) -> MovesByPiece {
+        if captures_first {
+            generator::generate_moves_captures_first(&self.board, only_captures)
+        } else {
+            generator::generate_moves_unordered(&self.board, only_captures)
+        }
     }
 
     pub fn apply_moves(&self, moves_by_piece: MovesByPiece) -> Vec<Self> {
