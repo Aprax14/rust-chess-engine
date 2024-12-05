@@ -5,7 +5,7 @@ use strum::IntoEnumIterator;
 use crate::types::piece::Piece;
 
 use super::{
-    constants,
+    constants::{self, EIGHT_ROW, FIRST_ROW},
     moves::Move,
     piece::{self, Bitboard, Color},
 };
@@ -460,6 +460,9 @@ impl Board {
         moving_piece.kind == piece::Kind::Pawn || (to.bits & occupied_cells.bits != 0)
     }
 
+    /// Makes a move and updates position, turn, en passant target, castling rights and moves count.
+    ///
+    /// Does not prevent you to make an illegal move.
     pub fn make_unchecked_move(&self, player_move: &Move) -> Self {
         let position = self.position.make_unchecked_move(player_move);
 
@@ -510,6 +513,59 @@ impl Board {
     pub fn move_is_capture(&self, player_move: &Move) -> bool {
         let other_side = player_move.piece.color.other();
         self.position.squares_occupied_by_color(other_side).bits & player_move.to.bits != 0
+    }
+
+    /// After taking a pawn to the promotion rank calculates the possible new boards.
+    pub fn generate_promotion_variants(&self) -> Vec<Self> {
+        let mut boards: Vec<Self> = Vec::new();
+
+        // i need the check the player that just made the move
+        let side_to_check = self.turn.other();
+        let rank = match side_to_check {
+            Color::Black => FIRST_ROW,
+            Color::White => EIGHT_ROW,
+        };
+
+        let promotion_square = self
+            .position
+            .bitboard_by_piece(Piece {
+                color: side_to_check,
+                kind: piece::Kind::Pawn,
+            })
+            .bits
+            & rank;
+
+        if promotion_square == 0 {
+            return boards;
+        }
+
+        let mut board_outcome = self.clone();
+        board_outcome
+            .position
+            .by_piece
+            .entry(Piece {
+                color: side_to_check,
+                kind: piece::Kind::Pawn,
+            })
+            .and_modify(|b| b.bits &= !promotion_square);
+
+        for piece_kind in piece::Kind::iter() {
+            if piece_kind == piece::Kind::Pawn || piece_kind == piece::Kind::King {
+                continue;
+            }
+            let mut board = board_outcome.clone();
+            board
+                .position
+                .by_piece
+                .entry(Piece {
+                    color: side_to_check,
+                    kind: piece_kind,
+                })
+                .and_modify(|b| b.bits |= promotion_square);
+            boards.push(board);
+        }
+
+        boards
     }
 }
 

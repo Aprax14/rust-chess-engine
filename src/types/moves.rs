@@ -4,6 +4,7 @@ use crate::moves::generator;
 
 use super::{
     board::Board,
+    constants::{EIGHT_ROW, FIRST_ROW},
     piece::{self, Bitboard, Color, Piece},
 };
 
@@ -12,6 +13,23 @@ pub struct Move {
     pub piece: Piece,
     pub from: Bitboard,
     pub to: Bitboard,
+}
+
+impl Move {
+    /// Returns the Bitboard of the promotion Square.
+    ///
+    /// Returns Bitboard 0 if there is no promotion going.
+    pub fn promotion_square(&self) -> Bitboard {
+        match (self.piece.kind, self.piece.color) {
+            (piece::Kind::Pawn, Color::White) => Bitboard {
+                bits: self.to.bits & EIGHT_ROW,
+            },
+            (piece::Kind::Pawn, Color::Black) => Bitboard {
+                bits: self.to.bits & FIRST_ROW,
+            },
+            _ => Bitboard { bits: 0 },
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -66,7 +84,18 @@ impl Scenario {
                         from: *from,
                         to: *to,
                     });
-                    scenarios.push(Self::from_board(new_board));
+                    if new_board.position.is_in_check(pieces_moves.piece.color) {
+                        // discard position, is not legal
+                        continue;
+                    }
+                    let promotions = new_board.generate_promotion_variants();
+                    if promotions.is_empty() {
+                        scenarios.push(Self::from_board(new_board));
+                    } else {
+                        for promotion in promotions {
+                            scenarios.push(Self::from_board(promotion));
+                        }
+                    }
                 }
             }
         }
@@ -74,25 +103,11 @@ impl Scenario {
         scenarios
     }
 
-    pub fn white_lost(&self) -> bool {
-        self.board
-            .position
-            .bitboard_by_piece(Piece {
-                color: Color::White,
-                kind: piece::Kind::King,
-            })
-            .bits
-            == 0
+    pub fn white_in_check(&self) -> bool {
+        self.board.position.is_in_check(Color::White)
     }
 
-    pub fn black_lost(&self) -> bool {
-        self.board
-            .position
-            .bitboard_by_piece(Piece {
-                color: Color::Black,
-                kind: piece::Kind::King,
-            })
-            .bits
-            == 0
+    pub fn black_in_check(&self) -> bool {
+        self.board.position.is_in_check(Color::Black)
     }
 }

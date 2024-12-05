@@ -12,9 +12,11 @@ mod utils;
 
 /*
 TODO:
-- Recognize when a match is over. At the moment the evaluation keeps going. If a king gets captured but the other side can re-capture it looks like its equal.
 - Consider castling move
 - Consider en passant moves
+- Consider Pawns promotion
+- Considera central king
+- Maybe personalized maps for pieces
 */
 
 fn main() -> Result<(), anyhow::Error> {

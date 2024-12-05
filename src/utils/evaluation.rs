@@ -15,11 +15,7 @@ fn minimax_alpha_beta(
     only_captures: bool,
     captures_first: bool,
 ) -> i32 {
-    if scenario.white_lost() {
-        return i32::MIN;
-    } else if scenario.black_lost() {
-        return i32::MAX;
-    } else if depth == 0 {
+    if depth == 0 {
         let static_eval = StaticEval::static_evaluate(&scenario.board);
         return static_eval.white - static_eval.black;
     }
@@ -27,6 +23,15 @@ fn minimax_alpha_beta(
     let available_moves = scenario.generate_moves(only_captures, captures_first);
 
     let next_scenarios = scenario.apply_moves(available_moves);
+    if next_scenarios.is_empty() {
+        if scenario.white_in_check() {
+            return i32::MIN;
+        } else if scenario.black_in_check() {
+            return i32::MAX;
+        } else {
+            return 0;
+        }
+    }
     match scenario.board.turn {
         Color::White => {
             let mut max_eval = i32::MIN;
