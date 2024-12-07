@@ -14,8 +14,7 @@ mod utils;
 TODO:
 - Consider castling move
 - Consider en passant moves
-- Consider Pawns promotion
-- Considera central king
+- Consider central king
 - Maybe personalized maps for pieces
 */
 

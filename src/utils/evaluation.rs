@@ -20,7 +20,7 @@ fn minimax_alpha_beta(
         return static_eval.white - static_eval.black;
     }
 
-    let available_moves = scenario.generate_moves(only_captures, captures_first);
+    let available_moves = scenario.generate_moves(only_captures);
 
     let next_scenarios = scenario.apply_moves(available_moves);
     if next_scenarios.is_empty() {
@@ -84,7 +84,7 @@ pub fn parallel_minimax_alpha_beta(
     only_captures: bool,
     captures_first: bool,
 ) -> (i32, Scenario) {
-    let available_moves = scenario.generate_moves(only_captures, captures_first);
+    let available_moves = scenario.generate_moves(only_captures);
     let next_scenarios = scenario.apply_moves(available_moves);
 
     let evaluation_for_scenario = next_scenarios.into_par_iter().map(|next_scenario| {
@@ -108,37 +108,5 @@ pub fn parallel_minimax_alpha_beta(
         Color::Black => evaluation_for_scenario
             .min_by_key(|(eval, _)| *eval)
             .unwrap(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{types::board::Board, utils::evaluation};
-
-    /// 30.79 seconds on my pc
-    #[test]
-    fn moves_unordered() {
-        let board = Board::from_forsyth_edwards(
-            "r1b1kbnr/pppp1ppp/2n2q2/4p3/2BPP3/5N2/PPP2PPP/RNBQK2R b KQkq - 2 4",
-        )
-        .unwrap();
-        let scenario = Scenario::from_board(board);
-        let eval =
-            evaluation::parallel_minimax_alpha_beta(&scenario, 6, i32::MIN, i32::MAX, false, false);
-        tracing::info!("suggested move: \n{}", eval.1.board);
-    }
-
-    /// 1.89 seconds on my pc
-    #[test]
-    fn captures_first() {
-        let board = Board::from_forsyth_edwards(
-            "r1b1kbnr/pppp1ppp/2n2q2/4p3/2BPP3/5N2/PPP2PPP/RNBQK2R b KQkq - 2 4",
-        )
-        .unwrap();
-        let scenario = Scenario::from_board(board);
-        let eval =
-            evaluation::parallel_minimax_alpha_beta(&scenario, 6, i32::MIN, i32::MAX, false, true);
-        tracing::info!("suggested move: \n{}", eval.1.board);
     }
 }
