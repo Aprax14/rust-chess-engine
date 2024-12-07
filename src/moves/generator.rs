@@ -2,7 +2,7 @@ use crate::types::{
     board::Board,
     constants::{EIGHT_ROW, FIRST_ROW},
     moves::Move,
-    piece,
+    piece::{self, Piece},
 };
 
 /*
@@ -19,6 +19,7 @@ pub fn generate_moves_ordered(board: &Board, only_captures: bool) -> Vec<Move> {
     let opponent_squares = board.position.squares_occupied_by_color(other_side);
 
     let mut promotions: Vec<Move> = Vec::new();
+    let mut checks: Vec<Move> = Vec::new();
     let mut captures: Vec<Move> = Vec::new();
     let mut quiet_moves: Vec<Move> = Vec::new();
 
@@ -52,6 +53,34 @@ pub fn generate_moves_ordered(board: &Board, only_captures: bool) -> Vec<Move> {
                         from: piece_position,
                         to: to_square,
                     });
+                } else if match piece.kind {
+                    piece::Kind::Pawn => moves_generator(
+                        to_square,
+                        board.position.occupied_cells(),
+                        board.position.squares_occupied_by_color(other_side),
+                    ),
+                    _ => moves_generator(
+                        to_square,
+                        board.position.squares_occupied_by_color(side),
+                        board.position.squares_occupied_by_color(other_side),
+                    ),
+                }
+                .bits
+                    & board
+                        .position
+                        .bitboard_by_piece(Piece {
+                            kind: piece::Kind::King,
+                            color: other_side,
+                        })
+                        .bits
+                    != 0
+                {
+                    // this move is a check
+                    checks.push(Move {
+                        piece: *piece,
+                        from: piece_position,
+                        to: to_square,
+                    });
                 } else if to_square.bits & opponent_squares.bits != 0 {
                     captures.push(Move {
                         piece: *piece,
@@ -71,8 +100,8 @@ pub fn generate_moves_ordered(board: &Board, only_captures: bool) -> Vec<Move> {
     if only_captures {
         return captures;
     }
-
-    captures.extend(quiet_moves);
-    promotions.extend(captures);
-    promotions
+    [promotions, checks, captures, quiet_moves]
+        .into_iter()
+        .flatten()
+        .collect()
 }

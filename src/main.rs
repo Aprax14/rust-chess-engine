@@ -20,48 +20,53 @@ TODO:
 
 fn main() -> Result<(), anyhow::Error> {
     tracing_subscriber::fmt::init();
+    loop {
+        let board = loop {
+            tracing::info!("insert a new position in Forsyth Edwards notation:");
 
-    let board = loop {
-        tracing::info!("insert the position in Forsyth Edwards notation");
+            let mut buffer = String::new();
+            io::stdin()
+                .read_line(&mut buffer)
+                .expect("failed to read user input");
 
-        let mut buffer = String::new();
-        io::stdin()
-            .read_line(&mut buffer)
-            .expect("failed to read user input");
+            let Ok(position) = Board::from_forsyth_edwards(buffer.trim()) else {
+                tracing::error!("error parsing position. Please insert a valid position");
+                continue;
+            };
 
-        let Ok(position) = Board::from_forsyth_edwards(buffer.trim()) else {
-            tracing::error!("error parsing position. Please insert a valid position");
-            continue;
+            break position;
         };
 
-        break position;
-    };
+        let depth = loop {
+            tracing::info!("insert evaluation depth");
 
-    let depth = loop {
-        tracing::info!("insert evaluation depth");
+            let mut buffer = String::new();
+            io::stdin()
+                .read_line(&mut buffer)
+                .expect("failed to read user input");
 
-        let mut buffer = String::new();
-        io::stdin()
-            .read_line(&mut buffer)
-            .expect("failed to read user input");
+            let Ok(depth) = buffer.trim().parse::<u8>() else {
+                tracing::error!("error! please insert a valid depth");
+                continue;
+            };
 
-        let Ok(depth) = buffer.trim().parse::<u8>() else {
-            tracing::error!("error! please insert a valid depth");
-            continue;
+            break depth;
         };
 
-        break depth;
-    };
+        tracing::info!("evaluating position: \n{}", board);
 
-    tracing::info!("evaluating position: \n{}", board);
-
-    let scenario = Scenario::from_board(board);
-    tracing::info!("start minimax evaluation...");
-    let eval =
-        evaluation::parallel_minimax_alpha_beta(&scenario, depth, i32::MIN, i32::MAX, false, true);
-    tracing::info!("suggested move: \n{}", eval.1.board);
-    tracing::info!("evaluation: {}", eval.0);
-    tracing::info!("minimax evaluation finished");
-
-    Ok(())
+        let scenario = Scenario::from_board(board);
+        tracing::info!("start minimax evaluation...");
+        let eval = evaluation::parallel_minimax_alpha_beta(
+            &scenario,
+            depth,
+            i32::MIN,
+            i32::MAX,
+            false,
+            true,
+        );
+        tracing::info!("suggested move: \n{}", eval.1.board);
+        tracing::info!("evaluation: {}", eval.0);
+        tracing::info!("minimax evaluation finished");
+    }
 }
