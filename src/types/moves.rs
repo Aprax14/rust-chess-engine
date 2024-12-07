@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use crate::moves::generator;
 
 use super::{
@@ -8,7 +6,7 @@ use super::{
     piece::{self, Bitboard, Color, Piece},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Move {
     pub piece: Piece,
     pub from: Bitboard,
@@ -38,15 +36,17 @@ pub struct Scenario {
 }
 
 impl Scenario {
-    pub fn from_board(board: Board) -> Self {
-        Self { board }
+    pub fn from_board(board: &Board) -> Self {
+        Self {
+            board: board.clone(),
+        }
     }
 
-    pub fn generate_moves(&self, only_captures: bool) -> Vec<Move> {
-        generator::generate_moves_ordered(&self.board, only_captures)
+    pub fn generate_moves(&self, only_critical: bool, current_pv: &Vec<Move>) -> Vec<Move> {
+        generator::generate_moves_ordered(&self.board, only_critical, current_pv)
     }
 
-    pub fn apply_moves(&self, moves: Vec<Move>) -> Vec<Self> {
+    pub fn apply_moves(&self, moves: Vec<Move>) -> Vec<(Move, Self)> {
         let mut scenarios = Vec::new();
         for piece_move in moves.into_iter() {
             let new_board = self.board.make_unchecked_move(&piece_move);
@@ -56,10 +56,10 @@ impl Scenario {
             }
             let promotions = new_board.generate_promotion_variants();
             if promotions.is_empty() {
-                scenarios.push(Self::from_board(new_board));
+                scenarios.push((piece_move, Self::from_board(&new_board)));
             } else {
                 for promotion in promotions {
-                    scenarios.push(Self::from_board(promotion));
+                    scenarios.push((piece_move.clone(), Self::from_board(&promotion)));
                 }
             }
         }

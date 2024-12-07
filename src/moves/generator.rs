@@ -13,11 +13,25 @@ use crate::types::{
     - in the resulting position the player is suiciding the king: the non static evaluator is going to discard it anyways
 */
 
-pub fn generate_moves_ordered(board: &Board, only_captures: bool) -> Vec<Move> {
+/// returns all the possible legal moves order by:
+///
+/// - possible best given from the principal variation
+/// - moves that stops ongoing checks
+/// - pawns promotions
+/// - checks
+/// - captures
+/// - quiet moves
+pub fn generate_moves_ordered(
+    board: &Board,
+    only_critical: bool,
+    current_pv: &Vec<Move>,
+) -> Vec<Move> {
     let side = board.turn;
     let other_side = side.other();
     let opponent_squares = board.position.squares_occupied_by_color(other_side);
 
+    let mut possible_best: Vec<Move> = Vec::new();
+    let mut stop_checks: Vec<Move> = Vec::new();
     let mut promotions: Vec<Move> = Vec::new();
     let mut checks: Vec<Move> = Vec::new();
     let mut captures: Vec<Move> = Vec::new();
@@ -45,14 +59,27 @@ pub fn generate_moves_ordered(board: &Board, only_captures: bool) -> Vec<Move> {
             };
 
             for to_square in moves_bitboard.single_squares() {
-                if piece.kind == piece::Kind::Pawn
+                let current_move = Move {
+                    piece: *piece,
+                    from: piece_position,
+                    to: to_square,
+                };
+
+                // discard illegal moves
+                let next_board = board.make_unchecked_move(&current_move);
+                if next_board.position.is_in_check(side) {
+                    continue;
+                }
+
+                // insert the move in one of the initialized vectors for better ordering
+                if current_pv.contains(&current_move) {
+                    possible_best.push(current_move);
+                } else if board.position.is_in_check(side) {
+                    stop_checks.push(current_move);
+                } else if piece.kind == piece::Kind::Pawn
                     && (to_square.bits & EIGHT_ROW != 0 || to_square.bits & FIRST_ROW != 0)
                 {
-                    promotions.push(Move {
-                        piece: *piece,
-                        from: piece_position,
-                        to: to_square,
-                    });
+                    promotions.push(current_move);
                 } else if match piece.kind {
                     piece::Kind::Pawn => moves_generator(
                         to_square,
@@ -76,32 +103,31 @@ pub fn generate_moves_ordered(board: &Board, only_captures: bool) -> Vec<Move> {
                     != 0
                 {
                     // this move is a check
-                    checks.push(Move {
-                        piece: *piece,
-                        from: piece_position,
-                        to: to_square,
-                    });
+                    checks.push(current_move);
                 } else if to_square.bits & opponent_squares.bits != 0 {
-                    captures.push(Move {
-                        piece: *piece,
-                        from: piece_position,
-                        to: to_square,
-                    });
+                    captures.push(current_move);
                 } else {
-                    quiet_moves.push(Move {
-                        piece: *piece,
-                        from: piece_position,
-                        to: to_square,
-                    });
+                    quiet_moves.push(current_move);
                 }
             }
         }
     }
-    if only_captures {
-        return captures;
+
+    if only_critical {
+        return [possible_best, stop_checks, promotions, checks, captures]
+            .into_iter()
+            .flatten()
+            .collect();
     }
-    [promotions, checks, captures, quiet_moves]
-        .into_iter()
-        .flatten()
-        .collect()
+    [
+        possible_best,
+        stop_checks,
+        promotions,
+        checks,
+        captures,
+        quiet_moves,
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }

@@ -1,6 +1,9 @@
 use std::io;
 
-use types::{board::Board, moves::Scenario};
+use types::{
+    board::Board,
+    moves::{Move, Scenario},
+};
 use utils::evaluation;
 
 mod moves;
@@ -20,6 +23,7 @@ TODO:
 
 fn main() -> Result<(), anyhow::Error> {
     tracing_subscriber::fmt::init();
+    let mut principal_variation: Vec<Move> = Vec::new();
     loop {
         let board = loop {
             tracing::info!("insert a new position in Forsyth Edwards notation:");
@@ -54,19 +58,23 @@ fn main() -> Result<(), anyhow::Error> {
         };
 
         tracing::info!("evaluating position: \n{}", board);
+        let scenario = Scenario::from_board(&board);
 
-        let scenario = Scenario::from_board(board);
         tracing::info!("start minimax evaluation...");
-        let eval = evaluation::parallel_minimax_alpha_beta(
+        let outcome = evaluation::parallel_minimax_alpha_beta_pv(
             &scenario,
             depth,
             i32::MIN,
             i32::MAX,
             false,
-            true,
+            principal_variation,
         );
-        tracing::info!("suggested move: \n{}", eval.1.board);
-        tracing::info!("evaluation: {}", eval.0);
+        let eval = outcome.0;
+        principal_variation = outcome.1;
+
+        let new_board = board.make_unchecked_move(&principal_variation[0]);
+        tracing::info!("suggested move: \n{}", new_board);
+        tracing::info!("evaluation: {}", eval);
         tracing::info!("minimax evaluation finished");
     }
 }

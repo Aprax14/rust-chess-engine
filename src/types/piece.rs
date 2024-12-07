@@ -177,7 +177,7 @@ impl Piece {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bitboard {
     pub bits: u64,
 }

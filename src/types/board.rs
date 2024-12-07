@@ -489,7 +489,7 @@ impl Board {
         }
     }
 
-    pub fn make_checked_move<T: TryInto<Bitboard>>(
+    pub fn make_checked_manual_move<T: TryInto<Bitboard>>(
         &self,
         piece: Piece,
         from: T,
@@ -597,7 +597,7 @@ mod tests {
         )
         .unwrap();
 
-        let board_after = board.make_checked_move(
+        let board_after = board.make_checked_manual_move(
             Piece {
                 kind: piece::Kind::Knight,
                 color: Color::Black,
@@ -608,7 +608,7 @@ mod tests {
 
         assert!(board_after.is_ok());
 
-        let board_after = board.make_checked_move(
+        let board_after = board.make_checked_manual_move(
             Piece {
                 kind: piece::Kind::Pawn,
                 color: Color::Black,
@@ -626,7 +626,7 @@ mod tests {
         )
         .unwrap();
 
-        let board_after = board.make_checked_move(
+        let board_after = board.make_checked_manual_move(
             Piece {
                 kind: piece::Kind::Pawn,
                 color: Color::White,
@@ -637,7 +637,7 @@ mod tests {
 
         assert!(board_after.is_err());
 
-        let board_after = board.make_checked_move(
+        let board_after = board.make_checked_manual_move(
             Piece {
                 kind: piece::Kind::Knight,
                 color: Color::White,
