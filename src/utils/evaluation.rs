@@ -1,8 +1,7 @@
 use std::cmp;
 use std::sync::mpsc::Sender;
 
-use rayon::iter::IntoParallelIterator;
-use rayon::iter::ParallelIterator;
+use rayon::ThreadPoolBuilder;
 
 use crate::types::moves::Move;
 use crate::types::{moves::Scenario, piece::Color};
@@ -116,25 +115,32 @@ pub fn parallel_minimax_alpha_beta_pv(
     let available_moves = scenario.generate_moves(false, &current_pv);
     let next_scenarios = scenario.apply_moves(available_moves);
 
-    // for each move we get the branch evaluation and his principal variation
-    next_scenarios.into_par_iter().for_each_with(
-        tx.clone(),
-        |sender, (piece_move, next_scenario)| {
-            let mut pv = current_pv.clone();
-            let eval = minimax_alpha_beta_pv(
-                &next_scenario,
-                depth - 1,
-                alpha,
-                beta,
-                depth_counter + 1,
-                &mut pv,
-            );
-            // send evaluations while elaborating them
-            sender
-                .send((piece_move, eval, pv))
-                .expect("failed to send to channel");
-        },
-    );
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(16)
+        .build()
+        .expect("failed to initilize threadpool");
+
+    pool.install(|| {
+        for (piece_move, next_scenario) in next_scenarios {
+            let mut inner_pv = current_pv.clone();
+            let inner_tx = tx.clone();
+            pool.spawn(move || {
+                // let mut pv = inner_pv;
+                let eval = minimax_alpha_beta_pv(
+                    &next_scenario,
+                    depth - 1,
+                    alpha,
+                    beta,
+                    depth_counter + 1,
+                    &mut inner_pv,
+                );
+                // send evaluations while elaborating them
+                inner_tx
+                    .send((piece_move, eval, inner_pv))
+                    .expect("failed to send to channel");
+            });
+        }
+    });
 
     drop(tx);
 }
