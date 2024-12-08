@@ -1,4 +1,5 @@
 use std::cmp;
+use std::sync::mpsc::Sender;
 
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
@@ -8,21 +9,28 @@ use crate::types::{moves::Scenario, piece::Color};
 
 use super::static_evaluation::StaticEval;
 
+// not working good at the moment
+const MAX_DEPTH: u32 = 6;
+
 fn minimax_alpha_beta_pv(
     scenario: &Scenario,
-    depth: u8,
+    depth: i32,
     mut alpha: i32,
     mut beta: i32,
-    only_critical: bool,
+    depth_counter: u32,
     current_pv: &mut Vec<Move>,
 ) -> i32 {
-    if depth == 0 {
+    // we keep searching only for captures and stop checks if we reached the required depth.
+    // depth <= 0 occours when we already reached the required level but we are keep evaluating captures.
+    let only_critical = depth <= 0;
+    let available_moves = scenario.generate_moves(only_critical, current_pv);
+
+    if depth <= 0 && (available_moves.is_empty() || depth_counter >= MAX_DEPTH) {
         let static_eval = StaticEval::static_evaluate(&scenario.board);
         return static_eval.white - static_eval.black;
     }
 
     let mut local_pv = Vec::new();
-    let available_moves = scenario.generate_moves(only_critical, current_pv);
 
     let next_scenarios = scenario.apply_moves(available_moves);
     if next_scenarios.is_empty() {
@@ -45,7 +53,7 @@ fn minimax_alpha_beta_pv(
                     depth - 1,
                     alpha,
                     beta,
-                    only_critical,
+                    depth_counter + 1,
                     &mut child_pv,
                 );
                 if inner_eval > max_eval {
@@ -73,7 +81,7 @@ fn minimax_alpha_beta_pv(
                     depth - 1,
                     alpha,
                     beta,
-                    only_critical,
+                    depth_counter + 1,
                     &mut child_pv,
                 );
 
@@ -84,7 +92,6 @@ fn minimax_alpha_beta_pv(
                     local_pv.extend(child_pv);
                 }
 
-                min_eval = cmp::min(min_eval, inner_eval);
                 beta = cmp::min(beta, inner_eval);
                 if alpha >= beta {
                     break;
@@ -99,47 +106,35 @@ fn minimax_alpha_beta_pv(
 
 pub fn parallel_minimax_alpha_beta_pv(
     scenario: &Scenario,
-    depth: u8,
+    depth: i32,
     alpha: i32,
     beta: i32,
-    only_critical: bool,
     current_pv: Vec<Move>,
-) -> (i32, Vec<Move>) {
-    let available_moves = scenario.generate_moves(only_critical, &current_pv);
+    tx: Sender<(Move, i32, Vec<Move>)>,
+) {
+    let depth_counter = 0;
+    let available_moves = scenario.generate_moves(false, &current_pv);
     let next_scenarios = scenario.apply_moves(available_moves);
 
     // for each move we get the branch evaluation and his principal variation
-    let evaluation_for_scenario =
-        next_scenarios
-            .into_par_iter()
-            .map(|(piece_move, next_scenario)| {
-                let mut pv = current_pv.clone();
-                let eval = minimax_alpha_beta_pv(
-                    &next_scenario,
-                    depth - 1,
-                    alpha,
-                    beta,
-                    only_critical,
-                    &mut pv,
-                );
+    next_scenarios.into_par_iter().for_each_with(
+        tx.clone(),
+        |sender, (piece_move, next_scenario)| {
+            let mut pv = current_pv.clone();
+            let eval = minimax_alpha_beta_pv(
+                &next_scenario,
+                depth - 1,
+                alpha,
+                beta,
+                depth_counter + 1,
+                &mut pv,
+            );
+            // send evaluations while elaborating them
+            sender
+                .send((piece_move, eval, pv))
+                .expect("failed to send to channel");
+        },
+    );
 
-                (piece_move, eval, pv)
-            });
-
-    // filter the previous result to get only the one associated to the best move
-    let (best_move, eval, mut pv) = match scenario.board.turn {
-        Color::White => evaluation_for_scenario
-            .max_by_key(|(_, eval, _)| *eval)
-            .unwrap(),
-        Color::Black => evaluation_for_scenario
-            .min_by_key(|(_, eval, _)| *eval)
-            .unwrap(),
-    };
-
-    // update pv
-    pv.insert(0, best_move);
-
-    // return the evaluation and the principal variation.
-    // the first element of the PV is the move the player should make.
-    (eval, pv)
+    drop(tx);
 }

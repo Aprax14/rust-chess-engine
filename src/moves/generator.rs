@@ -1,8 +1,10 @@
+use std::cmp::Reverse;
+
 use crate::types::{
     board::Board,
     constants::{EIGHT_ROW, FIRST_ROW},
     moves::Move,
-    piece::{self, Piece},
+    piece::{self, Bitboard, Piece},
 };
 
 /*
@@ -34,8 +36,8 @@ pub fn generate_moves_ordered(
     let mut stop_checks: Vec<Move> = Vec::new();
     let mut promotions: Vec<Move> = Vec::new();
     let mut checks: Vec<Move> = Vec::new();
-    let mut captures: Vec<Move> = Vec::new();
-    let mut quiet_moves: Vec<Move> = Vec::new();
+    let mut captures: Vec<(Move, i32)> = Vec::new();
+    let mut quiet_moves: Vec<(Move, i32)> = Vec::new();
 
     for (piece, bitboard) in &board.position.by_piece {
         if piece.color != side {
@@ -65,22 +67,7 @@ pub fn generate_moves_ordered(
                     to: to_square,
                 };
 
-                // discard illegal moves
-                let next_board = board.make_unchecked_move(&current_move);
-                if next_board.position.is_in_check(side) {
-                    continue;
-                }
-
-                // insert the move in one of the initialized vectors for better ordering
-                if current_pv.contains(&current_move) {
-                    possible_best.push(current_move);
-                } else if board.position.is_in_check(side) {
-                    stop_checks.push(current_move);
-                } else if piece.kind == piece::Kind::Pawn
-                    && (to_square.bits & EIGHT_ROW != 0 || to_square.bits & FIRST_ROW != 0)
-                {
-                    promotions.push(current_move);
-                } else if match piece.kind {
+                let attacked_squares = match piece.kind {
                     piece::Kind::Pawn => moves_generator(
                         to_square,
                         board.position.occupied_cells(),
@@ -92,7 +79,28 @@ pub fn generate_moves_ordered(
                         board.position.squares_occupied_by_color(other_side),
                     ),
                 }
-                .bits
+                .bits;
+
+                // discard illegal moves
+                let next_board = board.make_unchecked_move(&current_move);
+                if next_board.position.is_in_check(side) {
+                    continue;
+                }
+
+                // insert the move in one of the initialized vectors for better ordering
+                if current_pv.contains(&current_move) && !only_critical {
+                    // previously saved in principal variation
+                    possible_best.push(current_move);
+                } else if board.position.is_in_check(side) {
+                    // player is in check, the move we generate are all captures or moves that puts the kind out of check
+                    stop_checks.push(current_move);
+                } else if piece.kind == piece::Kind::Pawn
+                    && (to_square.bits & EIGHT_ROW != 0 || to_square.bits & FIRST_ROW != 0)
+                    && !only_critical
+                {
+                    // this move is a promotion
+                    promotions.push(current_move);
+                } else if attacked_squares
                     & board
                         .position
                         .bitboard_by_piece(Piece {
@@ -101,20 +109,45 @@ pub fn generate_moves_ordered(
                         })
                         .bits
                     != 0
+                    && !only_critical
                 {
                     // this move is a check
                     checks.push(current_move);
                 } else if to_square.bits & opponent_squares.bits != 0 {
-                    captures.push(current_move);
+                    let target = board
+                        .position
+                        .get_piece_in_square(to_square)
+                        .expect("this square should not be empty");
+                    let move_rating = (target.kind.value() - piece.kind.value()) * 100;
+                    captures.push((current_move, move_rating));
                 } else {
-                    quiet_moves.push(current_move);
+                    // its a quiet move
+                    let attacked_squares_with_pieces = attacked_squares & opponent_squares.bits;
+                    let mut move_rating = 0;
+
+                    for square in (Bitboard {
+                        bits: attacked_squares_with_pieces,
+                    })
+                    .single_squares()
+                    {
+                        let target = board
+                            .position
+                            .get_piece_in_square(square)
+                            .expect("square should no be empty");
+                        move_rating += target.kind.value() * 10;
+                    }
+
+                    quiet_moves.push((current_move, move_rating));
                 }
             }
         }
     }
 
+    captures.sort_by_key(|(m, rating)| Reverse(*rating));
+    quiet_moves.sort_by_key(|(m, rating)| Reverse(*rating));
+
     if only_critical {
-        return [possible_best, stop_checks, promotions, checks, captures]
+        return [stop_checks, captures.into_iter().map(|(m, _)| m).collect()]
             .into_iter()
             .flatten()
             .collect();
@@ -124,8 +157,8 @@ pub fn generate_moves_ordered(
         stop_checks,
         promotions,
         checks,
-        captures,
-        quiet_moves,
+        captures.into_iter().map(|(m, _)| m).collect(),
+        quiet_moves.into_iter().map(|(m, _)| m).collect(),
     ]
     .into_iter()
     .flatten()

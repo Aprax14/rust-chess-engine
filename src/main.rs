@@ -1,8 +1,9 @@
-use std::io;
+use std::{io, sync::mpsc, thread};
 
 use types::{
     board::Board,
     moves::{Move, Scenario},
+    piece::Color,
 };
 use utils::evaluation;
 
@@ -61,20 +62,55 @@ fn main() -> Result<(), anyhow::Error> {
         let scenario = Scenario::from_board(&board);
 
         tracing::info!("start minimax evaluation...");
-        let outcome = evaluation::parallel_minimax_alpha_beta_pv(
-            &scenario,
-            depth,
-            i32::MIN,
-            i32::MAX,
-            false,
-            principal_variation,
-        );
-        let eval = outcome.0;
-        principal_variation = outcome.1;
 
-        let new_board = board.make_unchecked_move(&principal_variation[0]);
-        tracing::info!("suggested move: \n{}", new_board);
-        tracing::info!("evaluation: {}", eval);
+        //--------------------------------Evaluation-------------------------------------//
+
+        let mut best_eval = match scenario.board.turn {
+            Color::White => i32::MIN,
+            Color::Black => i32::MAX,
+        };
+        let mut pv: Vec<Move> = Vec::new();
+
+        let (tx, rx) = mpsc::channel::<(Move, i32, Vec<Move>)>();
+        let previous_scenario = scenario.clone();
+        thread::spawn(move || {
+            evaluation::parallel_minimax_alpha_beta_pv(
+                &scenario,
+                depth as i32,
+                i32::MIN,
+                i32::MAX,
+                principal_variation.clone(),
+                tx,
+            )
+        });
+
+        // show the best move we have at the moment while we go on with the elaboration
+        for (inner_move, eval, inner_pv) in rx.iter() {
+            match previous_scenario.board.turn {
+                Color::White => {
+                    if eval > best_eval {
+                        best_eval = eval;
+                        pv = [vec![inner_move], inner_pv].into_iter().flatten().collect();
+                        let new_board = previous_scenario.board.make_unchecked_move(&pv[0]);
+                        tracing::info!("found new best move:\n{}", new_board);
+                        tracing::info!("evaluation: {}", eval);
+                    }
+                }
+                Color::Black => {
+                    if eval < best_eval {
+                        best_eval = eval;
+                        pv = [vec![inner_move], inner_pv].into_iter().flatten().collect();
+                        let new_board = previous_scenario.board.make_unchecked_move(&pv[0]);
+                        tracing::info!("found new best move:\n{}", new_board);
+                        tracing::info!("evaluation: {}", eval);
+                    }
+                }
+            };
+        }
+
+        principal_variation = pv;
+
+        //-----------------------------------------------------------------------//
         tracing::info!("minimax evaluation finished");
     }
 }
