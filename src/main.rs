@@ -73,12 +73,11 @@ fn main() -> Result<(), anyhow::Error> {
 
         let (tx, rx) = mpsc::channel::<(Move, i32, Vec<Move>)>();
         let previous_scenario = scenario.clone();
+
         thread::spawn(move || {
             evaluation::parallel_minimax_alpha_beta_pv(
                 &scenario,
                 depth as i32,
-                i32::MIN,
-                i32::MAX,
                 principal_variation.clone(),
                 tx,
             )
@@ -109,6 +108,14 @@ fn main() -> Result<(), anyhow::Error> {
         }
 
         principal_variation = pv;
+
+        let mut new_board = board.clone();
+        tracing::info!("Path to best move: \n");
+        for m in principal_variation.iter() {
+            new_board = new_board.make_unchecked_move(m);
+            tracing::info!("\n{}\n", new_board);
+            tracing::info!("---------------------------------------\n");
+        }
 
         //-----------------------------------------------------------------------//
         tracing::info!("minimax evaluation finished");

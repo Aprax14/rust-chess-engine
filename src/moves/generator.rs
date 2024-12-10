@@ -143,8 +143,7 @@ pub fn generate_moves_ordered(
         }
     }
 
-    captures.sort_by_key(|(m, rating)| Reverse(*rating));
-    quiet_moves.sort_by_key(|(m, rating)| Reverse(*rating));
+    captures.sort_by_key(|(_, rating)| Reverse(*rating));
 
     if only_critical {
         return [stop_checks, captures.into_iter().map(|(m, _)| m).collect()]
@@ -152,6 +151,8 @@ pub fn generate_moves_ordered(
             .flatten()
             .collect();
     }
+
+    quiet_moves.sort_by_key(|(_, rating)| Reverse(*rating));
     [
         possible_best,
         stop_checks,

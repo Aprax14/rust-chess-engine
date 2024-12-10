@@ -1,15 +1,15 @@
-use std::cmp;
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::mpsc::Sender;
+use std::{cmp, i32};
 
-use rayon::ThreadPoolBuilder;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::types::moves::Move;
 use crate::types::{moves::Scenario, piece::Color};
 
 use super::static_evaluation::StaticEval;
 
-// not working good at the moment
-const MAX_DEPTH: u32 = 6;
+const MAX_DEPTH: u32 = 10;
 
 fn minimax_alpha_beta_pv(
     scenario: &Scenario,
@@ -19,14 +19,15 @@ fn minimax_alpha_beta_pv(
     depth_counter: u32,
     current_pv: &mut Vec<Move>,
 ) -> i32 {
-    // we keep searching only for captures and stop checks if we reached the required depth.
-    // depth <= 0 occours when we already reached the required level but we are keep evaluating captures.
-    let only_critical = depth <= 0;
-    let available_moves = scenario.generate_moves(only_critical, current_pv);
+    let available_moves = scenario.generate_moves(false, current_pv);
 
-    if depth <= 0 && (available_moves.is_empty() || depth_counter >= MAX_DEPTH) {
-        let static_eval = StaticEval::static_evaluate(&scenario.board);
-        return static_eval.white - static_eval.black;
+    if depth <= 0 {
+        if available_moves.is_empty() {
+            let static_eval = StaticEval::static_evaluate(&scenario.board);
+            return static_eval.white - static_eval.black;
+        } else {
+            return quiescence_search(scenario, alpha, beta, depth_counter);
+        }
     }
 
     let mut local_pv = Vec::new();
@@ -106,8 +107,6 @@ fn minimax_alpha_beta_pv(
 pub fn parallel_minimax_alpha_beta_pv(
     scenario: &Scenario,
     depth: i32,
-    alpha: i32,
-    beta: i32,
     current_pv: Vec<Move>,
     tx: Sender<(Move, i32, Vec<Move>)>,
 ) {
@@ -115,32 +114,111 @@ pub fn parallel_minimax_alpha_beta_pv(
     let available_moves = scenario.generate_moves(false, &current_pv);
     let next_scenarios = scenario.apply_moves(available_moves);
 
-    let pool = ThreadPoolBuilder::new()
-        .num_threads(16)
-        .build()
-        .expect("failed to initilize threadpool");
-
-    pool.install(|| {
-        for (piece_move, next_scenario) in next_scenarios {
-            let mut inner_pv = current_pv.clone();
-            let inner_tx = tx.clone();
-            pool.spawn(move || {
-                // let mut pv = inner_pv;
-                let eval = minimax_alpha_beta_pv(
-                    &next_scenario,
-                    depth - 1,
-                    alpha,
-                    beta,
-                    depth_counter + 1,
-                    &mut inner_pv,
-                );
-                // send evaluations while elaborating them
-                inner_tx
-                    .send((piece_move, eval, inner_pv))
-                    .expect("failed to send to channel");
-            });
-        }
+    let best_eval = AtomicI32::new(match scenario.board.turn {
+        Color::White => i32::MIN,
+        Color::Black => i32::MAX,
     });
+    let main_alpha = AtomicI32::new(i32::MIN);
+    let main_beta = AtomicI32::new(i32::MAX);
+    let stop_signal = AtomicBool::new(false);
+
+    next_scenarios.into_par_iter().for_each_with(
+        tx.clone(),
+        |sender, (piece_move, next_scenario)| {
+            let mut pv = current_pv.clone();
+            let turn = scenario.board.turn;
+
+            if stop_signal.load(Ordering::Acquire) {
+                return;
+            }
+
+            let eval = minimax_alpha_beta_pv(
+                &next_scenario,
+                depth - 1,
+                main_alpha.load(Ordering::Acquire),
+                main_beta.load(Ordering::Acquire),
+                depth_counter + 1,
+                &mut pv,
+            );
+
+            match turn {
+                Color::White => {
+                    best_eval.fetch_max(eval, Ordering::AcqRel);
+                    main_alpha.fetch_max(eval, Ordering::AcqRel);
+
+                    if main_alpha.load(Ordering::Acquire) >= main_beta.load(Ordering::Acquire) {
+                        stop_signal.store(true, Ordering::Release);
+                        return;
+                    }
+                }
+                Color::Black => {
+                    best_eval.fetch_min(eval, Ordering::AcqRel);
+                    main_beta.fetch_min(eval, Ordering::AcqRel);
+
+                    if main_alpha.load(Ordering::Acquire) >= main_beta.load(Ordering::Acquire) {
+                        stop_signal.store(true, Ordering::Release);
+                        return;
+                    }
+                }
+            }
+            // send evaluations while elaborating them
+            sender
+                .send((piece_move, eval, pv))
+                .expect("failed to send to channel");
+        },
+    );
 
     drop(tx);
+}
+
+fn quiescence_search(
+    scenario: &Scenario,
+    mut alpha: i32,
+    mut beta: i32,
+    depth_counter: u32,
+) -> i32 {
+    let static_eval = StaticEval::static_evaluate(&scenario.board);
+    let current_eval = static_eval.white - static_eval.black;
+
+    if current_eval >= beta {
+        return beta;
+    }
+
+    if depth_counter >= MAX_DEPTH {
+        return current_eval;
+    }
+
+    if current_eval > alpha {
+        alpha = current_eval;
+    }
+
+    let available_moves = scenario.generate_moves(true, &Vec::new());
+    let next_scenarios = scenario.apply_moves(available_moves);
+
+    match scenario.board.turn {
+        Color::White => {
+            for (_, next_scenario) in next_scenarios {
+                let eval = quiescence_search(&next_scenario, alpha, beta, depth_counter + 1);
+                if eval >= beta {
+                    return beta;
+                }
+                if eval > alpha {
+                    alpha = eval;
+                }
+            }
+            alpha
+        }
+        Color::Black => {
+            for (_, next_scenario) in next_scenarios {
+                let eval = quiescence_search(&next_scenario, alpha, beta, depth_counter + 1);
+                if eval <= alpha {
+                    return alpha;
+                }
+                if eval < beta {
+                    beta = eval;
+                }
+            }
+            beta
+        }
+    }
 }
