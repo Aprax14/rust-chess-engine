@@ -30,6 +30,8 @@ pub fn generate_moves_ordered(
 ) -> Vec<Move> {
     let side = board.turn;
     let other_side = side.other();
+
+    let our_squares = board.position.squares_occupied_by_color(side);
     let opponent_squares = board.position.squares_occupied_by_color(other_side);
 
     let mut possible_best: Vec<Move> = Vec::new();
@@ -46,18 +48,15 @@ pub fn generate_moves_ordered(
 
         let moves_generator = piece.get_moves_generator();
         let pieces_position = bitboard.single_squares();
+
         for piece_position in pieces_position {
             let moves_bitboard = match piece.kind {
                 piece::Kind::Pawn => moves_generator(
                     piece_position,
                     board.position.occupied_cells(),
-                    board.position.squares_occupied_by_color(other_side),
+                    opponent_squares,
                 ),
-                _ => moves_generator(
-                    piece_position,
-                    board.position.squares_occupied_by_color(side),
-                    board.position.squares_occupied_by_color(other_side),
-                ),
+                _ => moves_generator(piece_position, our_squares, opponent_squares),
             };
 
             for to_square in moves_bitboard.single_squares() {
@@ -71,13 +70,9 @@ pub fn generate_moves_ordered(
                     piece::Kind::Pawn => moves_generator(
                         to_square,
                         board.position.occupied_cells(),
-                        board.position.squares_occupied_by_color(other_side),
+                        opponent_squares,
                     ),
-                    _ => moves_generator(
-                        to_square,
-                        board.position.squares_occupied_by_color(side),
-                        board.position.squares_occupied_by_color(other_side),
-                    ),
+                    _ => moves_generator(to_square, our_squares, opponent_squares),
                 }
                 .bits;
 
@@ -146,22 +141,20 @@ pub fn generate_moves_ordered(
     captures.sort_by_key(|(_, rating)| Reverse(*rating));
 
     if only_critical {
-        return [stop_checks, captures.into_iter().map(|(m, _)| m).collect()]
+        return stop_checks
             .into_iter()
-            .flatten()
+            .chain(captures.into_iter().map(|(m, _)| m))
             .collect();
     }
 
     quiet_moves.sort_by_key(|(_, rating)| Reverse(*rating));
-    [
-        possible_best,
-        stop_checks,
-        promotions,
-        checks,
-        captures.into_iter().map(|(m, _)| m).collect(),
-        quiet_moves.into_iter().map(|(m, _)| m).collect(),
-    ]
-    .into_iter()
-    .flatten()
-    .collect()
+
+    possible_best
+        .into_iter()
+        .chain(stop_checks)
+        .chain(promotions)
+        .chain(checks)
+        .chain(captures.into_iter().map(|(m, _)| m))
+        .chain(quiet_moves.into_iter().map(|(m, _)| m))
+        .collect()
 }
