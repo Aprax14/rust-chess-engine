@@ -1,10 +1,12 @@
 use std::cmp::Reverse;
 
+use strum::IntoEnumIterator;
+
 use crate::types::{
-    board::Board,
+    board::{Bitboards, Board, Castle},
     constants::{EIGHT_ROW, FIRST_ROW},
-    moves::Move,
-    piece::{self, Bitboard, Piece},
+    moves::{CastleSide, Move, MoveVariant, Scenario},
+    piece::{self, Bitboard, Color, Kind, Piece},
 };
 
 /*
@@ -22,6 +24,7 @@ use crate::types::{
 /// - pawns promotions
 /// - checks
 /// - captures
+/// - castling
 /// - quiet moves
 pub fn generate_moves_ordered(
     board: &Board,
@@ -39,6 +42,7 @@ pub fn generate_moves_ordered(
     let mut promotions: Vec<Move> = Vec::new();
     let mut checks: Vec<Move> = Vec::new();
     let mut captures: Vec<(Move, i32)> = Vec::new();
+    let castling = castling_moves(board);
     let mut quiet_moves: Vec<(Move, i32)> = Vec::new();
 
     for (piece, bitboard) in &board.position.by_piece {
@@ -62,8 +66,10 @@ pub fn generate_moves_ordered(
             for to_square in moves_bitboard.single_squares() {
                 let current_move = Move {
                     piece: *piece,
-                    from: piece_position,
-                    to: to_square,
+                    action: MoveVariant::Standard {
+                        from: piece_position,
+                        to: to_square,
+                    },
                 };
 
                 let attacked_squares = match piece.kind {
@@ -93,8 +99,21 @@ pub fn generate_moves_ordered(
                     && (to_square.bits & EIGHT_ROW != 0 || to_square.bits & FIRST_ROW != 0)
                     && !only_critical
                 {
-                    // this move is a promotion
-                    promotions.push(current_move);
+                    // this move is a promotion -> save all possible promotion moves
+                    for piece_kind in piece::Kind::iter() {
+                        if piece_kind == piece::Kind::Pawn || piece_kind == piece::Kind::King {
+                            continue;
+                        }
+                        let promotion = Move {
+                            piece: *piece,
+                            action: MoveVariant::Promote {
+                                from: piece_position,
+                                to: to_square,
+                                to_piece: piece_kind,
+                            },
+                        };
+                        promotions.push(promotion);
+                    }
                 } else if attacked_squares
                     & board
                         .position
@@ -128,7 +147,7 @@ pub fn generate_moves_ordered(
                         let target = board
                             .position
                             .get_piece_in_square(square)
-                            .expect("square should no be empty");
+                            .expect("square shouldn't be empty");
                         move_rating += target.kind.value() * 10;
                     }
 
@@ -155,6 +174,198 @@ pub fn generate_moves_ordered(
         .chain(promotions)
         .chain(checks)
         .chain(captures.into_iter().map(|(m, _)| m))
+        .chain(castling)
         .chain(quiet_moves.into_iter().map(|(m, _)| m))
         .collect()
+}
+
+pub fn castling_moves(board: &Board) -> Vec<Move> {
+    inner_castling_moves(board, board.white_can_castle, board.black_can_castle)
+}
+
+fn inner_castling_moves(
+    board: &Board,
+    white_can_castle: Castle,
+    black_can_castle: Castle,
+) -> Vec<Move> {
+    let castle_king = Move {
+        piece: Piece {
+            color: board.turn,
+            kind: piece::Kind::King,
+        },
+        action: MoveVariant::Castle(CastleSide::King),
+    };
+    let castle_queen = Move {
+        piece: Piece {
+            color: board.turn,
+            kind: piece::Kind::King,
+        },
+        action: MoveVariant::Castle(CastleSide::Queen),
+    };
+    let occupied_squares = board.position.occupied_cells();
+
+    match (board.turn, white_can_castle, black_can_castle) {
+        (Color::White, Castle::King, _) => {
+            let attacked_squares = board.attacked_squares(Color::Black);
+            if (attacked_squares.bits
+                & 0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00001110
+                != 0)
+                || (occupied_squares.bits
+                    & 0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000110
+                    != 0)
+            {
+                return Vec::new();
+            } else {
+                return vec![castle_king];
+            }
+        }
+        (Color::White, Castle::Queen, _) => {
+            let attacked_squares = board.attacked_squares(Color::Black);
+            if (attacked_squares.bits
+                & 0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00111000
+                != 0)
+                || (occupied_squares.bits
+                    & 0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_01110000
+                    != 0)
+            {
+                return Vec::new();
+            } else {
+                return vec![castle_queen];
+            }
+        }
+        (Color::White, Castle::Both, _) => {
+            let mut castle = inner_castling_moves(board, Castle::King, black_can_castle);
+            let castle_queen = inner_castling_moves(board, Castle::Queen, black_can_castle);
+            castle.extend(castle_queen);
+            castle
+        }
+        (Color::Black, _, Castle::King) => {
+            let attacked_squares = board.attacked_squares(Color::White);
+            if (attacked_squares.bits
+                & 0b00001110_00000000_00000000_00000000_00000000_00000000_00000000_00000000
+                != 0)
+                || (occupied_squares.bits
+                    & 0b00000110_00000000_00000000_00000000_00000000_00000000_00000000_00000000
+                    != 0)
+            {
+                return Vec::new();
+            } else {
+                return vec![castle_king];
+            }
+        }
+        (Color::Black, _, Castle::Queen) => {
+            let attacked_squares = board.attacked_squares(Color::White);
+            if (attacked_squares.bits
+                & 0b00111000_00000000_00000000_00000000_00000000_00000000_00000000_00000000
+                != 0)
+                || (occupied_squares.bits
+                    & 0b01110000_00000000_00000000_00000000_00000000_00000000_00000000_00000000
+                    != 0)
+            {
+                return Vec::new();
+            } else {
+                return vec![castle_queen];
+            }
+        }
+        (Color::Black, _, Castle::Both) => {
+            let mut castle = inner_castling_moves(board, white_can_castle, Castle::King);
+            let castle_queen = inner_castling_moves(board, white_can_castle, Castle::Queen);
+            castle.extend(castle_queen);
+            castle
+        }
+        _ => Vec::new(),
+    }
+}
+
+pub fn bitboards_after_castling(
+    current_bitboards: &Bitboards,
+    turn: Color,
+    side: CastleSide,
+) -> Bitboards {
+    let mut new_bitboards = current_bitboards.clone();
+    let king = Piece {
+        color: turn,
+        kind: Kind::King,
+    };
+    let rook = Piece {
+        color: turn,
+        kind: Kind::Rook,
+    };
+
+    match (turn, side) {
+        (Color::White, CastleSide::King) => {
+            let king_position = new_bitboards
+                .by_piece
+                .get_mut(&king)
+                .expect("failed to get king");
+            *king_position = Bitboard {
+                bits: 0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000010,
+            };
+            let rooks_position = new_bitboards
+                .by_piece
+                .get_mut(&rook)
+                .expect("failed to get rook");
+            *rooks_position = Bitboard {
+                bits: (rooks_position.bits
+                    & !0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000001)
+                    | 0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000100,
+            };
+        }
+        (Color::White, CastleSide::Queen) => {
+            let king_position = new_bitboards
+                .by_piece
+                .get_mut(&king)
+                .expect("failed to get king");
+            *king_position = Bitboard {
+                bits: 0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00100000,
+            };
+            let rooks_position = new_bitboards
+                .by_piece
+                .get_mut(&rook)
+                .expect("failed to get rook");
+            *rooks_position = Bitboard {
+                bits: (rooks_position.bits
+                    & !0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_10000000)
+                    | 0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00010000,
+            };
+        }
+        (Color::Black, CastleSide::King) => {
+            let king_position = new_bitboards
+                .by_piece
+                .get_mut(&king)
+                .expect("failed to get king");
+            *king_position = Bitboard {
+                bits: 0b00000010_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+            };
+            let rooks_position = new_bitboards
+                .by_piece
+                .get_mut(&rook)
+                .expect("failed to get rook");
+            *rooks_position = Bitboard {
+                bits: (rooks_position.bits
+                    & !0b00000001_00000000_00000000_00000000_00000000_00000000_00000000_00000000)
+                    | 0b00000100_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+            };
+        }
+        (Color::Black, CastleSide::Queen) => {
+            let king_position = new_bitboards
+                .by_piece
+                .get_mut(&king)
+                .expect("failed to get king");
+            *king_position = Bitboard {
+                bits: 0b00100000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+            };
+            let rooks_position = new_bitboards
+                .by_piece
+                .get_mut(&rook)
+                .expect("failed to get rook");
+            *rooks_position = Bitboard {
+                bits: (rooks_position.bits
+                    & !0b10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000)
+                    | 0b00010000_00000000_00000000_00000000_00000000_00000000_00000000_00000000,
+            };
+        }
+    }
+
+    new_bitboards
 }

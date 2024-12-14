@@ -32,8 +32,7 @@ fn minimax_alpha_beta_pv(
 
     let mut local_pv = Vec::new();
 
-    let next_scenarios = scenario.apply_moves(available_moves);
-    if next_scenarios.is_empty() {
+    if available_moves.is_empty() {
         if scenario.white_in_check() {
             return i32::MIN;
         } else if scenario.black_in_check() {
@@ -42,29 +41,32 @@ fn minimax_alpha_beta_pv(
             return 0;
         }
     }
+
     match scenario.board.turn {
         Color::White => {
             let mut max_eval = i32::MIN;
 
-            for (piece_move, next_scenario) in next_scenarios {
-                let mut child_pv = Vec::new();
-                let inner_eval = minimax_alpha_beta_pv(
-                    &next_scenario,
-                    depth - 1,
-                    alpha,
-                    beta,
-                    depth_counter + 1,
-                    &mut child_pv,
-                );
-                if inner_eval > max_eval {
-                    max_eval = inner_eval;
-                    local_pv.clear();
-                    local_pv.push(piece_move);
-                    local_pv.extend(child_pv);
-                }
-                alpha = cmp::max(alpha, inner_eval);
-                if alpha >= beta {
-                    break;
+            for player_move in available_moves {
+                if let Some(next_scenario) = scenario.apply_move(&player_move) {
+                    let mut child_pv = Vec::new();
+                    let inner_eval = minimax_alpha_beta_pv(
+                        &next_scenario,
+                        depth - 1,
+                        alpha,
+                        beta,
+                        depth_counter + 1,
+                        &mut child_pv,
+                    );
+                    if inner_eval > max_eval {
+                        max_eval = inner_eval;
+                        local_pv.clear();
+                        local_pv.push(player_move.clone());
+                        local_pv.extend(child_pv);
+                    }
+                    alpha = cmp::max(alpha, inner_eval);
+                    if alpha >= beta {
+                        break;
+                    }
                 }
             }
             current_pv.clear();
@@ -74,27 +76,29 @@ fn minimax_alpha_beta_pv(
         Color::Black => {
             let mut min_eval = i32::MAX;
 
-            for (piece_move, next_scenario) in next_scenarios {
-                let mut child_pv = Vec::new();
-                let inner_eval = minimax_alpha_beta_pv(
-                    &next_scenario,
-                    depth - 1,
-                    alpha,
-                    beta,
-                    depth_counter + 1,
-                    &mut child_pv,
-                );
+            for player_move in available_moves {
+                if let Some(next_scenario) = scenario.apply_move(&player_move) {
+                    let mut child_pv = Vec::new();
+                    let inner_eval = minimax_alpha_beta_pv(
+                        &next_scenario,
+                        depth - 1,
+                        alpha,
+                        beta,
+                        depth_counter + 1,
+                        &mut child_pv,
+                    );
 
-                if inner_eval < min_eval {
-                    min_eval = inner_eval;
-                    local_pv.clear();
-                    local_pv.push(piece_move);
-                    local_pv.extend(child_pv);
-                }
+                    if inner_eval < min_eval {
+                        min_eval = inner_eval;
+                        local_pv.clear();
+                        local_pv.push(player_move.clone());
+                        local_pv.extend(child_pv);
+                    }
 
-                beta = cmp::min(beta, inner_eval);
-                if alpha >= beta {
-                    break;
+                    beta = cmp::min(beta, inner_eval);
+                    if alpha >= beta {
+                        break;
+                    }
                 }
             }
             current_pv.clear();
@@ -112,7 +116,6 @@ pub fn parallel_minimax_alpha_beta_pv(
 ) {
     let depth_counter = 0;
     let available_moves = scenario.generate_moves(false, &current_pv);
-    let next_scenarios = scenario.apply_moves(available_moves);
 
     let best_eval = AtomicI32::new(match scenario.board.turn {
         Color::White => i32::MIN,
@@ -122,55 +125,57 @@ pub fn parallel_minimax_alpha_beta_pv(
     let main_beta = AtomicI32::new(i32::MAX);
     let stop_signal = AtomicBool::new(false);
 
-    next_scenarios.into_par_iter().for_each_with(
-        tx.clone(),
-        |sender, (piece_move, next_scenario)| {
-            let mut pv = current_pv.clone();
-            let turn = scenario.board.turn;
+    available_moves
+        .into_par_iter()
+        .for_each_with(tx.clone(), |sender, player_move| {
+            if let Some(next_scenario) = scenario.apply_move(&player_move) {
+                let mut pv = current_pv.clone();
+                let turn = scenario.board.turn;
 
-            if stop_signal.load(Ordering::Acquire) {
-                return;
-            }
+                if stop_signal.load(Ordering::Acquire) {
+                    return;
+                }
 
-            let eval = minimax_alpha_beta_pv(
-                &next_scenario,
-                depth - 1,
-                main_alpha.load(Ordering::Acquire),
-                main_beta.load(Ordering::Acquire),
-                depth_counter + 1,
-                &mut pv,
-            );
+                let eval = minimax_alpha_beta_pv(
+                    &next_scenario,
+                    depth - 1,
+                    main_alpha.load(Ordering::Acquire),
+                    main_beta.load(Ordering::Acquire),
+                    depth_counter + 1,
+                    &mut pv,
+                );
 
-            match turn {
-                Color::White => {
-                    best_eval.fetch_max(eval, Ordering::AcqRel);
-                    main_alpha.fetch_max(eval, Ordering::AcqRel);
+                match turn {
+                    Color::White => {
+                        best_eval.fetch_max(eval, Ordering::AcqRel);
+                        main_alpha.fetch_max(eval, Ordering::AcqRel);
 
-                    if main_alpha.load(Ordering::Acquire) >= main_beta.load(Ordering::Acquire) {
-                        stop_signal.store(true, Ordering::Release);
-                        return;
+                        if main_alpha.load(Ordering::Acquire) >= main_beta.load(Ordering::Acquire) {
+                            stop_signal.store(true, Ordering::Release);
+                            return;
+                        }
+                    }
+                    Color::Black => {
+                        best_eval.fetch_min(eval, Ordering::AcqRel);
+                        main_beta.fetch_min(eval, Ordering::AcqRel);
+
+                        if main_alpha.load(Ordering::Acquire) >= main_beta.load(Ordering::Acquire) {
+                            stop_signal.store(true, Ordering::Release);
+                            return;
+                        }
                     }
                 }
-                Color::Black => {
-                    best_eval.fetch_min(eval, Ordering::AcqRel);
-                    main_beta.fetch_min(eval, Ordering::AcqRel);
-
-                    if main_alpha.load(Ordering::Acquire) >= main_beta.load(Ordering::Acquire) {
-                        stop_signal.store(true, Ordering::Release);
-                        return;
-                    }
-                }
+                // send evaluations while elaborating them
+                sender
+                    .send((player_move.clone(), eval, pv))
+                    .expect("failed to send to channel");
             }
-            // send evaluations while elaborating them
-            sender
-                .send((piece_move, eval, pv))
-                .expect("failed to send to channel");
-        },
-    );
+        });
 
     drop(tx);
 }
 
+// non sto aggiornando la PV
 fn quiescence_search(
     scenario: &Scenario,
     mut alpha: i32,
@@ -193,29 +198,40 @@ fn quiescence_search(
     }
 
     let available_moves = scenario.generate_moves(true, &Vec::new());
-    let next_scenarios = scenario.apply_moves(available_moves);
+
+    if available_moves.is_empty() {
+        return current_eval;
+    }
 
     match scenario.board.turn {
         Color::White => {
-            for (_, next_scenario) in next_scenarios {
-                let eval = quiescence_search(&next_scenario, alpha, beta, depth_counter + 1);
-                if eval >= beta {
-                    return beta;
-                }
-                if eval > alpha {
-                    alpha = eval;
+            for player_move in available_moves {
+                if let Some(next_scenario) = scenario.apply_move(&player_move) {
+                    let eval = quiescence_search(&next_scenario, alpha, beta, depth_counter + 1);
+                    if eval >= beta {
+                        return beta;
+                    }
+                    if eval > alpha {
+                        alpha = eval;
+                    }
+                } else {
+                    continue;
                 }
             }
             alpha
         }
         Color::Black => {
-            for (_, next_scenario) in next_scenarios {
-                let eval = quiescence_search(&next_scenario, alpha, beta, depth_counter + 1);
-                if eval <= alpha {
-                    return alpha;
-                }
-                if eval < beta {
-                    beta = eval;
+            for player_move in available_moves {
+                if let Some(next_scenario) = scenario.apply_move(&player_move) {
+                    let eval = quiescence_search(&next_scenario, alpha, beta, depth_counter + 1);
+                    if eval <= alpha {
+                        return alpha;
+                    }
+                    if eval < beta {
+                        beta = eval;
+                    }
+                } else {
+                    continue;
                 }
             }
             beta

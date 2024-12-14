@@ -1,33 +1,37 @@
+use std::iter;
+
 use crate::moves::generator;
 
 use super::{
     board::Board,
     constants::{EIGHT_ROW, FIRST_ROW},
-    piece::{self, Bitboard, Color, Piece},
+    piece::{self, Bitboard, Color, Kind, Piece},
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CastleSide {
+    Queen,
+    King,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MoveVariant {
+    Standard {
+        from: Bitboard,
+        to: Bitboard,
+    },
+    Castle(CastleSide),
+    Promote {
+        from: Bitboard,
+        to: Bitboard,
+        to_piece: Kind,
+    },
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Move {
     pub piece: Piece,
-    pub from: Bitboard,
-    pub to: Bitboard,
-}
-
-impl Move {
-    /// Returns the Bitboard of the promotion Square.
-    ///
-    /// Returns Bitboard 0 if there is no promotion going.
-    pub fn promotion_square(&self) -> Bitboard {
-        match (self.piece.kind, self.piece.color) {
-            (piece::Kind::Pawn, Color::White) => Bitboard {
-                bits: self.to.bits & EIGHT_ROW,
-            },
-            (piece::Kind::Pawn, Color::Black) => Bitboard {
-                bits: self.to.bits & FIRST_ROW,
-            },
-            _ => Bitboard { bits: 0 },
-        }
-    }
+    pub action: MoveVariant,
 }
 
 #[derive(Debug, Clone)]
@@ -46,25 +50,15 @@ impl Scenario {
         generator::generate_moves_ordered(&self.board, only_critical, current_pv)
     }
 
-    pub fn apply_moves(&self, moves: Vec<Move>) -> Vec<(Move, Self)> {
-        let mut scenarios = Vec::new();
-        for piece_move in moves.into_iter() {
-            let new_board = self.board.make_unchecked_move(&piece_move);
-            if new_board.position.is_in_check(piece_move.piece.color) {
-                // discard position, is not legal
-                continue;
-            }
-            let promotions = new_board.generate_promotion_variants();
-            if promotions.is_empty() {
-                scenarios.push((piece_move, Self::from_board(&new_board)));
-            } else {
-                for promotion in promotions {
-                    scenarios.push((piece_move.clone(), Self::from_board(&promotion)));
-                }
-            }
-        }
+    pub fn apply_move(&self, player_move: &Move) -> Option<Scenario> {
+        let new_board = self.board.make_unchecked_move(player_move);
 
-        scenarios
+        if new_board.position.is_in_check(player_move.piece.color) {
+            // discard position, is not legal
+            return None;
+        } else {
+            return Some(Scenario { board: new_board });
+        }
     }
 
     pub fn white_in_check(&self) -> bool {

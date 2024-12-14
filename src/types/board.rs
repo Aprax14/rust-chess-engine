@@ -2,12 +2,15 @@ use anyhow::anyhow;
 use std::{collections::HashMap, fmt};
 use strum::IntoEnumIterator;
 
-use crate::types::piece::Piece;
+use crate::{
+    moves::generator,
+    types::{moves::CastleSide, piece::Piece},
+};
 
 use super::{
     constants::{self, EIGHT_ROW, FIRST_ROW},
-    moves::Move,
-    piece::{self, Bitboard, Color},
+    moves::{Move, MoveVariant},
+    piece::{self, Bitboard, Color, Kind},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -179,29 +182,68 @@ impl Bitboards {
     }
 
     pub fn make_unchecked_move(&self, player_move: &Move) -> Self {
-        let mut resulting_bitboards = self.clone();
+        match player_move.action {
+            MoveVariant::Standard { from, to } => {
+                let mut resulting_bitboards = self.clone();
+                let piece_bitboard = resulting_bitboards
+                    .by_piece
+                    .get_mut(&player_move.piece)
+                    .expect("failed to get piece bitboard");
 
-        let piece_bitboard = resulting_bitboards
-            .by_piece
-            .get_mut(&player_move.piece)
-            .expect("missing piece from bitboards");
+                // remove piece from the old position
+                piece_bitboard.bits &= !from.bits;
 
-        // remove piece from the old position
-        piece_bitboard.bits &= !player_move.from.bits;
+                // set the piece in the new position
+                piece_bitboard.bits |= to.bits;
 
-        // set the piece in the new position
-        piece_bitboard.bits |= player_move.to.bits;
+                let occupator = self.get_piece_in_square(to);
+                if let Some(oc) = occupator {
+                    resulting_bitboards
+                        .by_piece
+                        .get_mut(&oc)
+                        .expect("missing piece from bitboards")
+                        .bits &= !to.bits;
+                }
 
-        let occupator = self.get_piece_in_square(player_move.to);
-        if let Some(oc) = occupator {
-            resulting_bitboards
-                .by_piece
-                .get_mut(&oc)
-                .expect("missing piece from bitboards")
-                .bits &= !player_move.to.bits;
+                resulting_bitboards
+            }
+            MoveVariant::Castle(side) => {
+                generator::bitboards_after_castling(&self, player_move.piece.color, side)
+            }
+            MoveVariant::Promote { from, to, to_piece } => {
+                let mut resulting_bitboards = self.clone();
+                let pawn_bitboard = resulting_bitboards
+                    .by_piece
+                    .get_mut(&player_move.piece)
+                    .expect("failed to get pawn bitboard");
+
+                // remove pawn from the old position
+                pawn_bitboard.bits &= !from.bits;
+
+                let new_piece_bitboard = resulting_bitboards
+                    .by_piece
+                    .get_mut(&Piece {
+                        color: player_move.piece.color,
+                        kind: to_piece,
+                    })
+                    .expect("failed to get piece bitboard");
+
+                // set the piece it is promoting to in the new position
+                new_piece_bitboard.bits |= to.bits;
+
+                // remove possible captured pieces
+                let occupator = self.get_piece_in_square(to);
+                if let Some(oc) = occupator {
+                    resulting_bitboards
+                        .by_piece
+                        .get_mut(&oc)
+                        .expect("missing piece from bitboards")
+                        .bits &= !to.bits;
+                }
+
+                resulting_bitboards
+            }
         }
-
-        resulting_bitboards
     }
 }
 
@@ -290,6 +332,13 @@ impl Board {
         self.position.attacked_squares(side)
     }
 
+    pub fn castling_rights(&self, side: Color) -> Castle {
+        match side {
+            Color::Black => self.black_can_castle,
+            Color::White => self.white_can_castle,
+        }
+    }
+
     pub fn manual_move_is_valid(
         &self,
         player_move: &Move,
@@ -300,31 +349,47 @@ impl Board {
             return false;
         }
 
-        // check if there is the piece in the starting square
-        let piece_bitboard = self.position.bitboard_by_piece(player_move.piece);
-        if piece_bitboard.bits & player_move.from.bits == 0 {
-            return false;
-        }
+        match player_move.action {
+            MoveVariant::Standard { from, to } => {
+                // check if there is the piece in the starting square
+                let piece_bitboard = self.position.bitboard_by_piece(player_move.piece);
+                if piece_bitboard.bits & from.bits == 0 {
+                    return false;
+                }
 
-        // check if the move is one of the possible generated moves
-        let moves_generator = player_move.piece.get_moves_generator();
-        let other_side = player_move.piece.color.other();
+                // check if the move is one of the possible generated moves
+                let moves_generator = player_move.piece.get_moves_generator();
+                let other_side = player_move.piece.color.other();
 
-        let valid_moves = match player_move.piece.kind {
-            piece::Kind::Pawn => moves_generator(
-                player_move.from,
-                self.position.occupied_cells(),
-                self.position.squares_occupied_by_color(other_side),
-            ),
-            _ => moves_generator(
-                player_move.from,
-                self.position
-                    .squares_occupied_by_color(player_move.piece.color),
-                self.position.squares_occupied_by_color(other_side),
-            ),
-        };
-        if valid_moves.bits & player_move.to.bits == 0 {
-            return false;
+                let valid_moves = match player_move.piece.kind {
+                    piece::Kind::Pawn => moves_generator(
+                        from,
+                        self.position.occupied_cells(),
+                        self.position.squares_occupied_by_color(other_side),
+                    ),
+                    _ => moves_generator(
+                        from,
+                        self.position
+                            .squares_occupied_by_color(player_move.piece.color),
+                        self.position.squares_occupied_by_color(other_side),
+                    ),
+                };
+                if valid_moves.bits & to.bits == 0 {
+                    return false;
+                }
+            }
+            MoveVariant::Castle(side) => match (side, self.castling_rights(self.turn)) {
+                (CastleSide::King, Castle::Both) | (CastleSide::King, Castle::King) => {
+                    return true;
+                }
+                (CastleSide::Queen, Castle::Both) | (CastleSide::Queen, Castle::Queen) => {
+                    return true;
+                }
+                _ => {
+                    return false;
+                }
+            },
+            MoveVariant::Promote { from, to, to_piece } => todo!(),
         }
 
         // check if we already reached the draw
@@ -342,122 +407,245 @@ impl Board {
 
     /// calculates possibile en passant target generated by the move being made
     pub fn calculate_en_passant_target(&self, player_move: &Move) -> Bitboard {
-        if player_move.piece.kind != piece::Kind::Pawn {
-            return Bitboard { bits: 0 };
-        }
-
-        if player_move.from.bits << 16 != player_move.to.bits
-            && player_move.from.bits >> 16 != player_move.to.bits
-        {
-            // pawn is not making a 2 squares move
-            return Bitboard { bits: 0 };
-        }
-
-        let possible_en_passant_doer = (player_move.to.bits << 1 & constants::NOT_H_RANK)
-            | (player_move.to.bits >> 1 & constants::NOT_A_RANK);
-        match player_move.piece.color {
-            Color::White => {
-                let black_pawns = self
-                    .position
-                    .bitboard_by_piece(Piece {
-                        kind: piece::Kind::Pawn,
-                        color: Color::Black,
-                    })
-                    .bits;
-
-                if possible_en_passant_doer & black_pawns != 0 {
-                    return Bitboard {
-                        bits: player_move.to.bits >> 8,
-                    };
+        match player_move.action {
+            MoveVariant::Standard { from, to } => {
+                if player_move.piece.kind != piece::Kind::Pawn {
+                    return Bitboard { bits: 0 };
                 }
-            }
-            Color::Black => {
-                let white_pawns = self
-                    .position
-                    .bitboard_by_piece(Piece {
-                        kind: piece::Kind::Pawn,
-                        color: Color::White,
-                    })
-                    .bits;
 
-                if possible_en_passant_doer & white_pawns != 0 {
-                    return Bitboard {
-                        bits: player_move.to.bits << 8,
-                    };
+                if from.bits << 16 != to.bits && from.bits >> 16 != to.bits {
+                    // pawn is not making a 2 squares move
+                    return Bitboard { bits: 0 };
                 }
+
+                let possible_en_passant_doer =
+                    (to.bits << 1 & constants::NOT_H_RANK) | (to.bits >> 1 & constants::NOT_A_RANK);
+                match player_move.piece.color {
+                    Color::White => {
+                        let black_pawns = self
+                            .position
+                            .bitboard_by_piece(Piece {
+                                kind: piece::Kind::Pawn,
+                                color: Color::Black,
+                            })
+                            .bits;
+
+                        if possible_en_passant_doer & black_pawns != 0 {
+                            return Bitboard { bits: to.bits >> 8 };
+                        }
+                    }
+                    Color::Black => {
+                        let white_pawns = self
+                            .position
+                            .bitboard_by_piece(Piece {
+                                kind: piece::Kind::Pawn,
+                                color: Color::White,
+                            })
+                            .bits;
+
+                        if possible_en_passant_doer & white_pawns != 0 {
+                            return Bitboard { bits: to.bits << 8 };
+                        }
+                    }
+                }
+                Bitboard { bits: 0 }
             }
+            _ => Bitboard { bits: 0 },
         }
-        Bitboard { bits: 0 }
     }
     /// calculates how castling rights get changed by the move being made
-    fn calculate_castling_rights(&self, moving_piece: Piece, from: Bitboard) -> (Castle, Castle) {
-        match moving_piece.color {
-            Color::White => {
-                if self.white_can_castle == Castle::No || moving_piece.kind == piece::Kind::King {
-                    return (Castle::No, self.black_can_castle);
-                }
-                let queen_rook: u64 =
-                    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_10000000;
-                let king_rook: u64 =
-                    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000001;
+    fn calculate_castling_rights(&self, player_move: &Move) -> (Castle, Castle) {
+        let white_queen_rook: u64 =
+            0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_10000000;
+        let white_king_rook: u64 =
+            0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000001;
+        let black_queen_rook: u64 =
+            0b10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000;
+        let black_king_rook: u64 =
+            0b00000001_00000000_00000000_00000000_00000000_00000000_00000000_00000000;
 
-                if moving_piece.kind == piece::Kind::Rook {
-                    if from.bits == queen_rook {
-                        match self.white_can_castle {
-                            Castle::No => unreachable!(),
-                            Castle::King | Castle::Both => {
-                                return (Castle::King, self.black_can_castle)
-                            }
-                            Castle::Queen => return (Castle::No, self.black_can_castle),
-                        }
-                    } else if from.bits == king_rook {
-                        match self.white_can_castle {
-                            Castle::No => unreachable!(),
-                            Castle::Queen | Castle::Both => {
-                                return (Castle::Queen, self.black_can_castle)
-                            }
-                            Castle::King => return (Castle::No, self.black_can_castle),
+        let white_can_castle = match (player_move.piece.color, player_move.piece.kind) {
+            (Color::White, Kind::King) => Castle::No,
+            (Color::White, Kind::Rook) => {
+                match (self.white_can_castle, player_move.action.clone()) {
+                    (Castle::No, _) => Castle::No,
+                    (Castle::King, MoveVariant::Standard { from, to: _ }) => {
+                        if from.bits & white_king_rook != 0 {
+                            Castle::No
+                        } else {
+                            Castle::King
                         }
                     }
-                }
-            }
-            Color::Black => {
-                if self.black_can_castle == Castle::No || moving_piece.kind == piece::Kind::King {
-                    return (self.white_can_castle, Castle::No);
-                }
-                let queen_rook: u64 =
-                    0b10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000;
-                let king_rook: u64 =
-                    0b00000001_00000000_00000000_00000000_00000000_00000000_00000000_00000000;
-
-                if moving_piece.kind == piece::Kind::Rook {
-                    if from.bits == queen_rook {
-                        match self.black_can_castle {
-                            Castle::No => unreachable!(),
-                            Castle::King | Castle::Both => {
-                                return (self.white_can_castle, Castle::King)
-                            }
-                            Castle::Queen => return (self.white_can_castle, Castle::No),
-                        }
-                    } else if from.bits == king_rook {
-                        match self.black_can_castle {
-                            Castle::No => unreachable!(),
-                            Castle::Queen | Castle::Both => {
-                                return (self.white_can_castle, Castle::Queen)
-                            }
-                            Castle::King => return (self.white_can_castle, Castle::No),
+                    (Castle::Queen, MoveVariant::Standard { from, to: _ }) => {
+                        if from.bits & white_queen_rook != 0 {
+                            Castle::No
+                        } else {
+                            Castle::Queen
                         }
                     }
+                    (Castle::Both, MoveVariant::Standard { from, to: _ }) => {
+                        if from.bits & white_king_rook != 0 {
+                            Castle::Queen
+                        } else if from.bits & white_queen_rook != 0 {
+                            Castle::King
+                        } else {
+                            Castle::Both
+                        }
+                    }
+                    _ => unreachable!(),
                 }
             }
-        }
-        (self.white_can_castle, self.black_can_castle)
+            (Color::Black, _) => match (self.white_can_castle, player_move.action.clone()) {
+                (Castle::No, _) => Castle::No,
+                (
+                    Castle::King,
+                    MoveVariant::Standard { from: _, to }
+                    | MoveVariant::Promote {
+                        from: _,
+                        to,
+                        to_piece: _,
+                    },
+                ) => {
+                    if to.bits & white_king_rook != 0 {
+                        Castle::No
+                    } else {
+                        Castle::King
+                    }
+                }
+                (
+                    Castle::Queen,
+                    MoveVariant::Standard { from: _, to }
+                    | MoveVariant::Promote {
+                        from: _,
+                        to,
+                        to_piece: _,
+                    },
+                ) => {
+                    if to.bits & white_queen_rook != 0 {
+                        Castle::No
+                    } else {
+                        Castle::Queen
+                    }
+                }
+                (
+                    Castle::Both,
+                    MoveVariant::Standard { from: _, to }
+                    | MoveVariant::Promote {
+                        from: _,
+                        to,
+                        to_piece: _,
+                    },
+                ) => {
+                    if to.bits & white_king_rook != 0 {
+                        Castle::Queen
+                    } else if to.bits & white_queen_rook != 0 {
+                        Castle::King
+                    } else {
+                        Castle::Both
+                    }
+                }
+                _ => self.white_can_castle,
+            },
+            _ => self.white_can_castle,
+        };
+
+        let black_can_castle = match (player_move.piece.color, player_move.piece.kind) {
+            (Color::Black, Kind::King) => Castle::No,
+            (Color::Black, Kind::Rook) => {
+                match (self.black_can_castle, player_move.action.clone()) {
+                    (Castle::No, _) => Castle::No,
+                    (Castle::King, MoveVariant::Standard { from, to: _ }) => {
+                        if from.bits & black_king_rook != 0 {
+                            Castle::No
+                        } else {
+                            Castle::King
+                        }
+                    }
+                    (Castle::Queen, MoveVariant::Standard { from, to: _ }) => {
+                        if from.bits & black_queen_rook != 0 {
+                            Castle::No
+                        } else {
+                            Castle::Queen
+                        }
+                    }
+                    (Castle::Both, MoveVariant::Standard { from, to: _ }) => {
+                        if from.bits & black_king_rook != 0 {
+                            Castle::Queen
+                        } else if from.bits & black_queen_rook != 0 {
+                            Castle::King
+                        } else {
+                            Castle::Both
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            (Color::White, _) => match (self.black_can_castle, player_move.action.clone()) {
+                (Castle::No, _) => Castle::No,
+                (
+                    Castle::King,
+                    MoveVariant::Standard { from: _, to }
+                    | MoveVariant::Promote {
+                        from: _,
+                        to,
+                        to_piece: _,
+                    },
+                ) => {
+                    if to.bits & black_king_rook != 0 {
+                        Castle::No
+                    } else {
+                        Castle::King
+                    }
+                }
+                (
+                    Castle::Queen,
+                    MoveVariant::Standard { from: _, to }
+                    | MoveVariant::Promote {
+                        from: _,
+                        to,
+                        to_piece: _,
+                    },
+                ) => {
+                    if to.bits & black_queen_rook != 0 {
+                        Castle::No
+                    } else {
+                        Castle::Queen
+                    }
+                }
+                (
+                    Castle::Both,
+                    MoveVariant::Standard { from: _, to }
+                    | MoveVariant::Promote {
+                        from: _,
+                        to,
+                        to_piece: _,
+                    },
+                ) => {
+                    if to.bits & black_king_rook != 0 {
+                        Castle::Queen
+                    } else if to.bits & black_queen_rook != 0 {
+                        Castle::King
+                    } else {
+                        Castle::Both
+                    }
+                }
+                _ => self.black_can_castle,
+            },
+            _ => self.black_can_castle,
+        };
+
+        (white_can_castle, black_can_castle)
     }
 
-    pub fn reset_50_moves(&self, moving_piece: Piece, to: Bitboard) -> bool {
+    pub fn reset_50_moves(&self, player_move: &Move) -> bool {
         // suppose that the validity check already happened so a piece can not move on a square occupied by another piece of the same color.
         let occupied_cells = self.position.occupied_cells();
-        moving_piece.kind == piece::Kind::Pawn || (to.bits & occupied_cells.bits != 0)
+        if let MoveVariant::Standard { from: _, to } = player_move.action {
+            return player_move.piece.kind == piece::Kind::Pawn
+                || (to.bits & occupied_cells.bits != 0);
+        } else {
+            return false;
+        }
     }
 
     /// Makes a move and updates position, turn, en passant target, castling rights and moves count.
@@ -469,9 +657,8 @@ impl Board {
         let turn = self.turn.other();
 
         let en_passant_target = self.calculate_en_passant_target(player_move);
-        let (white_can_castle, black_can_castle) =
-            self.calculate_castling_rights(player_move.piece, player_move.from);
-        let reps_50 = if self.reset_50_moves(player_move.piece, player_move.to) {
+        let (white_can_castle, black_can_castle) = self.calculate_castling_rights(&player_move);
+        let reps_50 = if self.reset_50_moves(&player_move) {
             0
         } else {
             self.reps_50 + 1
@@ -489,6 +676,26 @@ impl Board {
         }
     }
 
+    pub fn there_is_promotion(&self) -> bool {
+        self.position
+            .bitboard_by_piece(Piece {
+                color: Color::White,
+                kind: piece::Kind::Pawn,
+            })
+            .bits
+            & EIGHT_ROW
+            != 0
+            || self
+                .position
+                .bitboard_by_piece(Piece {
+                    color: Color::Black,
+                    kind: piece::Kind::Pawn,
+                })
+                .bits
+                & FIRST_ROW
+                != 0
+    }
+
     pub fn make_checked_manual_move<T: TryInto<Bitboard>>(
         &self,
         piece: Piece,
@@ -501,7 +708,10 @@ impl Board {
         let from = from.try_into()?;
         let to = to.try_into()?;
 
-        let player_move = Move { piece, from, to };
+        let player_move = Move {
+            piece,
+            action: MoveVariant::Standard { from, to },
+        };
 
         let next_board = self.make_unchecked_move(&player_move);
         if !self.manual_move_is_valid(&player_move, &next_board.position) {
@@ -512,60 +722,11 @@ impl Board {
 
     pub fn move_is_capture(&self, player_move: &Move) -> bool {
         let other_side = player_move.piece.color.other();
-        self.position.squares_occupied_by_color(other_side).bits & player_move.to.bits != 0
-    }
-
-    /// After taking a pawn to the promotion rank calculates the possible new boards.
-    pub fn generate_promotion_variants(&self) -> Vec<Self> {
-        let mut boards: Vec<Self> = Vec::new();
-
-        // i need the check the player that just made the move
-        let side_to_check = self.turn.other();
-        let rank = match side_to_check {
-            Color::Black => FIRST_ROW,
-            Color::White => EIGHT_ROW,
-        };
-
-        let promotion_square = self
-            .position
-            .bitboard_by_piece(Piece {
-                color: side_to_check,
-                kind: piece::Kind::Pawn,
-            })
-            .bits
-            & rank;
-
-        if promotion_square == 0 {
-            return boards;
+        if let MoveVariant::Standard { from: _, to } = player_move.action {
+            return self.position.squares_occupied_by_color(other_side).bits & to.bits != 0;
         }
 
-        let mut board_outcome = self.clone();
-        board_outcome
-            .position
-            .by_piece
-            .entry(Piece {
-                color: side_to_check,
-                kind: piece::Kind::Pawn,
-            })
-            .and_modify(|b| b.bits &= !promotion_square);
-
-        for piece_kind in piece::Kind::iter() {
-            if piece_kind == piece::Kind::Pawn || piece_kind == piece::Kind::King {
-                continue;
-            }
-            let mut board = board_outcome.clone();
-            board
-                .position
-                .by_piece
-                .entry(Piece {
-                    color: side_to_check,
-                    kind: piece_kind,
-                })
-                .and_modify(|b| b.bits |= promotion_square);
-            boards.push(board);
-        }
-
-        boards
+        false
     }
 }
 
