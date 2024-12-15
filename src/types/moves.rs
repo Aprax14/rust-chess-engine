@@ -1,11 +1,8 @@
-use std::iter;
-
 use crate::moves::generator;
 
 use super::{
     board::Board,
-    constants::{EIGHT_ROW, FIRST_ROW},
-    piece::{self, Bitboard, Color, Kind, Piece},
+    piece::{Bitboard, Color, Kind, Piece},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,7 +43,7 @@ impl Scenario {
         }
     }
 
-    pub fn generate_moves(&self, only_critical: bool, current_pv: &Vec<Move>) -> Vec<Move> {
+    pub fn generate_moves(&self, only_critical: bool, current_pv: &[Move]) -> Vec<Move> {
         generator::generate_moves_ordered(&self.board, only_critical, current_pv)
     }
 
@@ -56,9 +53,9 @@ impl Scenario {
         if new_board.position.is_in_check(player_move.piece.color) {
             // discard position, is not legal
             return None;
-        } else {
-            return Some(Scenario { board: new_board });
         }
+
+        Some(Scenario { board: new_board })
     }
 
     pub fn white_in_check(&self) -> bool {

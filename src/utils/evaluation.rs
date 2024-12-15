@@ -1,3 +1,4 @@
+#![warn(clippy::pedantic)]
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::mpsc::Sender;
 use std::{cmp, i32};
@@ -26,7 +27,7 @@ fn minimax_alpha_beta_pv(
             let static_eval = StaticEval::static_evaluate(&scenario.board);
             return static_eval.white - static_eval.black;
         } else {
-            return quiescence_search(scenario, alpha, beta, depth_counter);
+            return quiescence_search(scenario, alpha, beta, depth_counter, current_pv);
         }
     }
 
@@ -181,6 +182,7 @@ fn quiescence_search(
     mut alpha: i32,
     mut beta: i32,
     depth_counter: u32,
+    current_pv: &mut Vec<Move>,
 ) -> i32 {
     let static_eval = StaticEval::static_evaluate(&scenario.board);
     let current_eval = static_eval.white - static_eval.black;
@@ -203,37 +205,63 @@ fn quiescence_search(
         return current_eval;
     }
 
+    let mut local_pv = Vec::new();
+
     match scenario.board.turn {
         Color::White => {
             for player_move in available_moves {
                 if let Some(next_scenario) = scenario.apply_move(&player_move) {
-                    let eval = quiescence_search(&next_scenario, alpha, beta, depth_counter + 1);
+                    let mut child_pv = Vec::new();
+                    let eval = quiescence_search(
+                        &next_scenario,
+                        alpha,
+                        beta,
+                        depth_counter + 1,
+                        &mut child_pv,
+                    );
                     if eval >= beta {
                         return beta;
                     }
                     if eval > alpha {
                         alpha = eval;
+                        local_pv.clear();
+                        local_pv.push(player_move.clone());
+                        local_pv.extend(child_pv);
                     }
                 } else {
                     continue;
                 }
             }
+            current_pv.clear();
+            current_pv.extend(local_pv);
             alpha
         }
         Color::Black => {
             for player_move in available_moves {
                 if let Some(next_scenario) = scenario.apply_move(&player_move) {
-                    let eval = quiescence_search(&next_scenario, alpha, beta, depth_counter + 1);
+                    let mut child_pv = Vec::new();
+                    let eval = quiescence_search(
+                        &next_scenario,
+                        alpha,
+                        beta,
+                        depth_counter + 1,
+                        &mut child_pv,
+                    );
                     if eval <= alpha {
                         return alpha;
                     }
                     if eval < beta {
                         beta = eval;
+                        local_pv.clear();
+                        local_pv.push(player_move.clone());
+                        local_pv.extend(child_pv);
                     }
                 } else {
                     continue;
                 }
             }
+            current_pv.clear();
+            current_pv.extend(local_pv);
             beta
         }
     }

@@ -5,7 +5,7 @@ use strum::IntoEnumIterator;
 use crate::types::{
     board::{Bitboards, Board, Castle},
     constants::{EIGHT_ROW, FIRST_ROW},
-    moves::{CastleSide, Move, MoveVariant, Scenario},
+    moves::{CastleSide, Move, MoveVariant},
     piece::{self, Bitboard, Color, Kind, Piece},
 };
 
@@ -29,7 +29,7 @@ use crate::types::{
 pub fn generate_moves_ordered(
     board: &Board,
     only_critical: bool,
-    current_pv: &Vec<Move>,
+    current_pv: &[Move],
 ) -> Vec<Move> {
     let side = board.turn;
     let other_side = side.other();
@@ -114,17 +114,7 @@ pub fn generate_moves_ordered(
                         };
                         promotions.push(promotion);
                     }
-                } else if attacked_squares
-                    & board
-                        .position
-                        .bitboard_by_piece(Piece {
-                            kind: piece::Kind::King,
-                            color: other_side,
-                        })
-                        .bits
-                    != 0
-                    && !only_critical
-                {
+                } else if board.position.is_in_check(other_side) && !only_critical {
                     // this move is a check
                     checks.push(current_move);
                 } else if to_square.bits & opponent_squares.bits != 0 {
@@ -132,7 +122,7 @@ pub fn generate_moves_ordered(
                         .position
                         .get_piece_in_square(to_square)
                         .expect("this square should not be empty");
-                    let move_rating = (target.kind.value() - piece.kind.value()) * 100;
+                    let move_rating = target.kind.value() - piece.kind.value();
                     captures.push((current_move, move_rating));
                 } else {
                     // its a quiet move
@@ -148,7 +138,7 @@ pub fn generate_moves_ordered(
                             .position
                             .get_piece_in_square(square)
                             .expect("square shouldn't be empty");
-                        move_rating += target.kind.value() * 10;
+                        move_rating += target.kind.value();
                     }
 
                     quiet_moves.push((current_move, move_rating));
@@ -215,9 +205,9 @@ fn inner_castling_moves(
                     != 0)
             {
                 return Vec::new();
-            } else {
-                return vec![castle_king];
             }
+
+            vec![castle_king]
         }
         (Color::White, Castle::Queen, _) => {
             let attacked_squares = board.attacked_squares(Color::Black);
@@ -229,9 +219,9 @@ fn inner_castling_moves(
                     != 0)
             {
                 return Vec::new();
-            } else {
-                return vec![castle_queen];
             }
+
+            vec![castle_queen]
         }
         (Color::White, Castle::Both, _) => {
             let mut castle = inner_castling_moves(board, Castle::King, black_can_castle);
@@ -249,9 +239,9 @@ fn inner_castling_moves(
                     != 0)
             {
                 return Vec::new();
-            } else {
-                return vec![castle_king];
             }
+
+            vec![castle_king]
         }
         (Color::Black, _, Castle::Queen) => {
             let attacked_squares = board.attacked_squares(Color::White);
@@ -263,9 +253,9 @@ fn inner_castling_moves(
                     != 0)
             {
                 return Vec::new();
-            } else {
-                return vec![castle_queen];
             }
+
+            vec![castle_queen]
         }
         (Color::Black, _, Castle::Both) => {
             let mut castle = inner_castling_moves(board, white_can_castle, Castle::King);
@@ -368,4 +358,17 @@ pub fn bitboards_after_castling(
     }
 
     new_bitboards
+}
+
+mod test {
+    use crate::{moves::generator, types::board::Board};
+
+    #[test]
+    fn generation() {
+        let board = Board::from_forsyth_edwards(
+            "r1b1kbnr/pppp1ppp/2n2q2/4p3/2BPP3/5N2/PPP2PPP/RNBQK2R b KQkq - 2 4",
+        )
+        .unwrap();
+        generator::generate_moves_ordered(&board, false, &Vec::new());
+    }
 }

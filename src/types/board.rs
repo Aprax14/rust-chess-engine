@@ -26,10 +26,15 @@ impl Castle {
         match s {
             "KQkq" => Ok((Self::Both, Self::Both)),
             "Kkq" => Ok((Self::King, Self::Both)),
+            "Qkq" => Ok((Self::Queen, Self::Both)),
             "kq" => Ok((Self::No, Self::Both)),
+            "k" => Ok((Self::No, Self::King)),
+            "q" => Ok((Self::No, Self::Queen)),
             "KQk" => Ok((Self::Both, Self::King)),
             "KQq" => Ok((Self::Both, Self::Queen)),
             "KQ" => Ok((Self::Both, Self::No)),
+            "K" => Ok((Self::King, Self::No)),
+            "Q" => Ok((Self::Queen, Self::No)),
             "-" => Ok((Self::No, Self::No)),
             _ => Err(anyhow!("invalid castling right notation: {}", s)),
         }
@@ -208,7 +213,7 @@ impl Bitboards {
                 resulting_bitboards
             }
             MoveVariant::Castle(side) => {
-                generator::bitboards_after_castling(&self, player_move.piece.color, side)
+                generator::bitboards_after_castling(self, player_move.piece.color, side)
             }
             MoveVariant::Promote { from, to, to_piece } => {
                 let mut resulting_bitboards = self.clone();
@@ -643,9 +648,9 @@ impl Board {
         if let MoveVariant::Standard { from: _, to } = player_move.action {
             return player_move.piece.kind == piece::Kind::Pawn
                 || (to.bits & occupied_cells.bits != 0);
-        } else {
-            return false;
         }
+
+        false
     }
 
     /// Makes a move and updates position, turn, en passant target, castling rights and moves count.
@@ -657,8 +662,8 @@ impl Board {
         let turn = self.turn.other();
 
         let en_passant_target = self.calculate_en_passant_target(player_move);
-        let (white_can_castle, black_can_castle) = self.calculate_castling_rights(&player_move);
-        let reps_50 = if self.reset_50_moves(&player_move) {
+        let (white_can_castle, black_can_castle) = self.calculate_castling_rights(player_move);
+        let reps_50 = if self.reset_50_moves(player_move) {
             0
         } else {
             self.reps_50 + 1
