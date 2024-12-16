@@ -22,17 +22,6 @@ fn minimax_alpha_beta_pv(
 ) -> i32 {
     let available_moves = scenario.generate_moves(false, current_pv);
 
-    if depth <= 0 {
-        if available_moves.is_empty() {
-            let static_eval = StaticEval::static_evaluate(&scenario.board);
-            return static_eval.white - static_eval.black;
-        } else {
-            return quiescence_search(scenario, alpha, beta, depth_counter, current_pv);
-        }
-    }
-
-    let mut local_pv = Vec::new();
-
     if available_moves.is_empty() {
         if scenario.white_in_check() {
             return i32::MIN;
@@ -42,6 +31,12 @@ fn minimax_alpha_beta_pv(
             return 0;
         }
     }
+
+    if depth <= 0 {
+        return quiescence_search(scenario, alpha, beta, depth_counter, current_pv);
+    }
+
+    let mut local_pv = Vec::new();
 
     match scenario.board.turn {
         Color::White => {
@@ -151,6 +146,11 @@ pub fn parallel_minimax_alpha_beta_pv(
                         best_eval.fetch_max(eval, Ordering::AcqRel);
                         main_alpha.fetch_max(eval, Ordering::AcqRel);
 
+                        // send evaluations while elaborating
+                        sender
+                            .send((player_move.clone(), eval, pv))
+                            .expect("failed to send to channel");
+
                         if main_alpha.load(Ordering::Acquire) >= main_beta.load(Ordering::Acquire) {
                             stop_signal.store(true, Ordering::Release);
                             return;
@@ -160,16 +160,17 @@ pub fn parallel_minimax_alpha_beta_pv(
                         best_eval.fetch_min(eval, Ordering::AcqRel);
                         main_beta.fetch_min(eval, Ordering::AcqRel);
 
+                        // send evaluations while elaborating
+                        sender
+                            .send((player_move.clone(), eval, pv))
+                            .expect("failed to send to channel");
+
                         if main_alpha.load(Ordering::Acquire) >= main_beta.load(Ordering::Acquire) {
                             stop_signal.store(true, Ordering::Release);
                             return;
                         }
                     }
                 }
-                // send evaluations while elaborating them
-                sender
-                    .send((player_move.clone(), eval, pv))
-                    .expect("failed to send to channel");
             }
         });
 
@@ -202,7 +203,13 @@ fn quiescence_search(
     let available_moves = scenario.generate_moves(true, &Vec::new());
 
     if available_moves.is_empty() {
-        return current_eval;
+        if scenario.white_in_check() {
+            return i32::MIN;
+        } else if scenario.black_in_check() {
+            return i32::MAX;
+        } else {
+            return 0;
+        }
     }
 
     let mut local_pv = Vec::new();

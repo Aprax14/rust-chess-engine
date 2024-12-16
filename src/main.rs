@@ -13,7 +13,6 @@ mod utils;
 
 // 3k4/8/7p/2p1p1pP/1pPpPpP1/1P1P1P2/N7/2K5 w - - 0 1
 // r1b1kbnr/pppp1ppp/2n2q2/4p3/2BPP3/5N2/PPP2PPP/RNBQK2R b KQkq - 2 4
-// last game going on: 5r1r/2ppk2p/p3pqnP/6BB/P1N5/2PQ1NP1/5K2/7R w - - 1 30
 
 /*
 TODO:
