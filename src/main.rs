@@ -25,7 +25,7 @@ fn main() -> Result<(), anyhow::Error> {
     let mut principal_variation: Vec<Move> = Vec::new();
     loop {
         let board = loop {
-            tracing::info!("insert a new position in Forsyth Edwards notation:");
+            tracing::info!("Forsyth Edwards position notation:");
 
             let mut buffer = String::new();
             io::stdin()
@@ -41,7 +41,23 @@ fn main() -> Result<(), anyhow::Error> {
         };
 
         let depth = loop {
-            tracing::info!("insert evaluation depth");
+            tracing::info!("Full evaluation Depth:");
+
+            let mut buffer = String::new();
+            io::stdin()
+                .read_line(&mut buffer)
+                .expect("failed to read user input");
+
+            let Ok(depth) = buffer.trim().parse::<u8>() else {
+                tracing::error!("error! please insert a valid depth");
+                continue;
+            };
+
+            break depth;
+        };
+
+        let max_depth = loop {
+            tracing::info!("Max evaluation Depth");
 
             let mut buffer = String::new();
             io::stdin()
@@ -76,6 +92,7 @@ fn main() -> Result<(), anyhow::Error> {
             evaluation::parallel_minimax_alpha_beta_pv(
                 &scenario,
                 depth as i32,
+                max_depth as i32,
                 principal_variation.clone(),
                 tx,
             )

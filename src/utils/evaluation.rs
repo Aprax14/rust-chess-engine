@@ -10,14 +10,13 @@ use crate::types::{moves::Scenario, piece::Color};
 
 use super::static_evaluation::StaticEval;
 
-const MAX_DEPTH: u32 = 10;
-
 fn minimax_alpha_beta_pv(
     scenario: &Scenario,
     depth: i32,
+    max_depth: i32,
     mut alpha: i32,
     mut beta: i32,
-    depth_counter: u32,
+    depth_counter: i32,
     current_pv: &mut Vec<Move>,
 ) -> i32 {
     let available_moves = scenario.generate_moves(false, current_pv);
@@ -33,7 +32,7 @@ fn minimax_alpha_beta_pv(
     }
 
     if depth <= 0 {
-        return quiescence_search(scenario, alpha, beta, depth_counter, current_pv);
+        return quiescence_search(scenario, alpha, beta, depth_counter, max_depth, current_pv);
     }
 
     let mut local_pv = Vec::new();
@@ -48,6 +47,7 @@ fn minimax_alpha_beta_pv(
                     let inner_eval = minimax_alpha_beta_pv(
                         &next_scenario,
                         depth - 1,
+                        max_depth,
                         alpha,
                         beta,
                         depth_counter + 1,
@@ -78,6 +78,7 @@ fn minimax_alpha_beta_pv(
                     let inner_eval = minimax_alpha_beta_pv(
                         &next_scenario,
                         depth - 1,
+                        max_depth,
                         alpha,
                         beta,
                         depth_counter + 1,
@@ -107,6 +108,7 @@ fn minimax_alpha_beta_pv(
 pub fn parallel_minimax_alpha_beta_pv(
     scenario: &Scenario,
     depth: i32,
+    max_depth: i32,
     current_pv: Vec<Move>,
     tx: Sender<(Move, i32, Vec<Move>)>,
 ) {
@@ -135,6 +137,7 @@ pub fn parallel_minimax_alpha_beta_pv(
                 let eval = minimax_alpha_beta_pv(
                     &next_scenario,
                     depth - 1,
+                    max_depth,
                     main_alpha.load(Ordering::Acquire),
                     main_beta.load(Ordering::Acquire),
                     depth_counter + 1,
@@ -182,7 +185,8 @@ fn quiescence_search(
     scenario: &Scenario,
     mut alpha: i32,
     mut beta: i32,
-    depth_counter: u32,
+    depth_counter: i32,
+    max_depth: i32,
     current_pv: &mut Vec<Move>,
 ) -> i32 {
     let static_eval = StaticEval::static_evaluate(&scenario.board);
@@ -192,7 +196,7 @@ fn quiescence_search(
         return beta;
     }
 
-    if depth_counter >= MAX_DEPTH {
+    if depth_counter >= max_depth {
         return current_eval;
     }
 
@@ -224,6 +228,7 @@ fn quiescence_search(
                         alpha,
                         beta,
                         depth_counter + 1,
+                        max_depth,
                         &mut child_pv,
                     );
                     if eval >= beta {
@@ -252,6 +257,7 @@ fn quiescence_search(
                         alpha,
                         beta,
                         depth_counter + 1,
+                        max_depth,
                         &mut child_pv,
                     );
                     if eval <= alpha {
