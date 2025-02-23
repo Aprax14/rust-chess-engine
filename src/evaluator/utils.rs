@@ -15,7 +15,6 @@ pub fn attacked_squares_score(
     board_position
         .attacks(piece, position)
         .single_squares()
-        .into_iter()
         .map(|square| {
             if let Some(p) = board_position.piece_at(square) {
                 p.kind.attacked_value()

@@ -23,10 +23,10 @@ impl Board {
                 continue;
             }
 
-            for piece_position in bitboard.single_squares().into_iter() {
+            for piece_position in bitboard.single_squares() {
                 let available_moves = self.position.available_moves(*piece, piece_position);
 
-                for to_square in available_moves.single_squares().into_iter() {
+                for to_square in available_moves.single_squares() {
                     let current_move = Move {
                         piece: *piece,
                         action: MoveKind::Standard {

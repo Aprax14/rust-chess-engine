@@ -161,6 +161,25 @@ impl TryFrom<char> for Piece {
     }
 }
 
+pub struct SingleSquareIterator {
+    bits: u64,
+}
+
+impl Iterator for SingleSquareIterator {
+    type Item = Bitboard;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.bits == 0 {
+            return None;
+        }
+
+        let piece = self.bits & self.bits.wrapping_neg();
+        self.bits &= self.bits - 1;
+
+        Some(Bitboard::new(piece))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bitboard {
     pub bits: u64,
@@ -285,16 +304,8 @@ impl Bitboard {
         Self { bits }
     }
 
-    pub fn single_squares(&self) -> Vec<Self> {
-        let mut counter = self.bits;
-        let mut accumulator = Vec::with_capacity(self.bits.count_ones() as usize);
-        while counter != 0 {
-            let piece = counter & counter.wrapping_neg();
-            accumulator.push(Self { bits: piece });
-            counter &= counter - 1;
-        }
-
-        accumulator
+    pub fn single_squares(&self) -> SingleSquareIterator {
+        SingleSquareIterator { bits: self.bits }
     }
 
     pub fn count_bits(&self) -> i32 {
