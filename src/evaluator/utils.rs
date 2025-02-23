@@ -23,14 +23,12 @@ pub fn attacked_squares_score(
                 constants::ATTACKED_EMPTY_SQUARE_VALUE
             }
         })
-        .fold(0, |acc, x| acc + x)
+        .sum()
 }
 
 fn inner_move_score_no_captures(m: &Move, board_position: &BBPosition) -> i32 {
     match m.action {
-        MoveKind::Castle(_) => {
-            return constants::CASTLING_VALUE;
-        }
+        MoveKind::Castle(_) => constants::CASTLING_VALUE,
         MoveKind::Standard { from, to } => {
             let attacked_before = attacked_squares_score(board_position, m.piece, from);
             let attacked_after = attacked_squares_score(board_position, m.piece, to);
@@ -48,9 +46,7 @@ fn inner_move_score_no_captures(m: &Move, board_position: &BBPosition) -> i32 {
 
 pub fn move_score_with_mvv_lva(m: &Move, board_position: &BBPosition) -> i32 {
     match m.action {
-        MoveKind::Castle(_) => {
-            return constants::CASTLING_VALUE;
-        }
+        MoveKind::Castle(_) => constants::CASTLING_VALUE,
         MoveKind::Standard { from, to } => {
             let Some(victim) = board_position.piece_at(to) else {
                 return inner_move_score_no_captures(m, board_position);
@@ -65,12 +61,10 @@ pub fn move_score_with_mvv_lva(m: &Move, board_position: &BBPosition) -> i32 {
                     // we are capturing a defended less valuable piece with a more valuable piece
                     capture_value = capture_value * 3 / 2;
                 }
-            } else {
-                if capture_value < 0 {
-                    // the piece is not defended so this is not a bad move
-                    // we consider the material gain
-                    capture_value = victim.kind.value();
-                }
+            } else if capture_value < 0 {
+                // the piece is not defended so this is not a bad move
+                // we consider the material gain
+                capture_value = victim.kind.value();
             }
 
             capture_value

@@ -51,10 +51,10 @@ pub fn white_pawn_quiet_moves(starting_position: Bitboard, blockers: Bitboard) -
 
 pub fn black_pawn_quiet_moves(starting_position: Bitboard, blockers: Bitboard) -> Bitboard {
     if starting_position.bits & constants::SEVENTH_ROW != 0 {
-        return (starting_position >> 8 & !blockers)
-            | (starting_position >> 16 & !blockers & !(blockers >> 8));
+        (starting_position >> 8 & !blockers)
+            | (starting_position >> 16 & !blockers & !(blockers >> 8))
     } else {
-        return starting_position >> 8 & !blockers;
+        starting_position >> 8 & !blockers
     }
 }
 

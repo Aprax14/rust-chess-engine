@@ -332,7 +332,7 @@ impl BBPosition {
                 generators::white_pawn(piece_position, occupied | enemies, enemies)
             }
             (PieceKind::Pawn, Color::Black) => {
-                generators::black_pawn_attack(piece_position, occupied | enemies, enemies)
+                generators::black_pawn(piece_position, occupied | enemies, enemies)
             }
             (PieceKind::Knight, _) => generators::knight(piece_position, our_squares, enemies),
             (PieceKind::Bishop, _) => generators::bishop(piece_position, our_squares, enemies),
@@ -391,7 +391,7 @@ impl BBPosition {
                 resulting_bitboards
             }
             MoveKind::Castle(side) => {
-                castle::bitboards_after_castling(&self, player_move.piece.color, side)
+                castle::bitboards_after_castling(self, player_move.piece.color, side)
             }
             MoveKind::Promote { from, to, to_piece } => {
                 let mut resulting_bitboards = self.clone();

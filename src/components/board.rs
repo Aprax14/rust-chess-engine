@@ -51,6 +51,7 @@ impl fmt::Display for Board {
 }
 
 impl Board {
+    #[expect(dead_code)]
     pub fn new_game() -> Self {
         Self::from_forsyth_edwards("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
             .unwrap()

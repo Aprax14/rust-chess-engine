@@ -1,9 +1,4 @@
-use std::{
-    io,
-    sync::mpsc,
-    thread,
-    time::{Duration, Instant},
-};
+use std::{io, sync::mpsc, thread, time::Instant};
 
 use components::{board::Board, pieces::Color};
 use moves::moves::{Move, Scenario};

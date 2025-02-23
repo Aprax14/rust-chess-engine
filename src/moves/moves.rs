@@ -2,7 +2,7 @@ use crate::components::{
     board::Board,
     castle::CastleSide,
     constants,
-    pieces::{Bitboard, Color, Piece, PieceKind},
+    pieces::{Bitboard, Piece, PieceKind},
     position::BBPosition,
 };
 
@@ -65,13 +65,5 @@ impl Scenario {
         Self {
             board: board.clone(),
         }
-    }
-
-    pub fn white_is_in_check(&self) -> bool {
-        self.board.position.is_in_check(Color::White)
-    }
-
-    pub fn black_is_in_check(&self) -> bool {
-        self.board.position.is_in_check(Color::Black)
     }
 }
