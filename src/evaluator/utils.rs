@@ -25,7 +25,7 @@ pub fn attacked_squares_score(
         .sum()
 }
 
-fn inner_move_score_no_captures(m: Move, board_position: &BBPosition) -> i32 {
+fn inner_move_score_no_captures(m: &Move, board_position: &BBPosition) -> i32 {
     match m.action {
         MoveKind::Castle(_) => constants::CASTLING_VALUE,
         MoveKind::Standard { from, to } => {
@@ -45,7 +45,7 @@ fn inner_move_score_no_captures(m: Move, board_position: &BBPosition) -> i32 {
     }
 }
 
-pub fn move_score_with_mvv_lva(m: Move, board_position: &BBPosition) -> i32 {
+pub fn move_score_with_mvv_lva(m: &Move, board_position: &BBPosition) -> i32 {
     match m.action {
         MoveKind::Castle(_) => constants::CASTLING_VALUE,
         MoveKind::Standard { from, to } => {
@@ -72,7 +72,7 @@ pub fn move_score_with_mvv_lva(m: Move, board_position: &BBPosition) -> i32 {
         }
         MoveKind::Promote { from, to, to_piece } => {
             let standard_eval = move_score_with_mvv_lva(
-                Move {
+                &Move {
                     piece: m.piece,
                     action: MoveKind::Standard { from, to },
                 },

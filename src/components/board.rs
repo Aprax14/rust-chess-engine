@@ -97,7 +97,7 @@ impl Board {
     }
 
     /// calculates how castling rights get changed by the move being made
-    fn calculate_castling_rights(&self, player_move: Move) -> (Castle, Castle) {
+    fn calculate_castling_rights(&self, player_move: &Move) -> (Castle, Castle) {
         let white_queen_rook = 56;
         let white_king_rook = 63;
         let black_queen_rook = 0;
@@ -273,7 +273,7 @@ impl Board {
     }
 
     /// checks if the 50 moves rules counter should be resetted
-    pub fn reset_50_moves(&self, player_move: Move) -> bool {
+    pub fn reset_50_moves(&self, player_move: &Move) -> bool {
         // suppose that the validity check already happened so a piece can not move on a square occupied by another piece of the same color.
         let occupied_cells = self.position.occupied_cells();
         if let MoveKind::Standard { from: _, to } = player_move.action {
@@ -287,8 +287,8 @@ impl Board {
     /// Makes a move and updates position, turn, en passant target, castling rights and moves count.
     ///
     /// Does not prevent you to make an illegal move.
-    pub fn make_unchecked_move(&self, player_move: Move) -> Self {
-        let position = self.position.inner_make_unchecked_move(player_move);
+    pub fn make_unchecked_move(&self, player_move: &Move) -> Self {
+        let position = self.position.inner_make_unchecked_move(&player_move);
 
         let turn = self.turn.other();
 
