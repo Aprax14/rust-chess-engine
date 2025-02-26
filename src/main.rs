@@ -94,7 +94,7 @@ fn main() -> Result<(), anyhow::Error> {
                 Color::White => {
                     if eval > best_eval {
                         best_eval = eval;
-                        let new_board = previous_scenario.board.make_unchecked_move(&inner_move);
+                        let new_board = previous_scenario.board.make_unchecked_move(inner_move);
                         tracing::info!("found new best move:\n{}", new_board);
                         tracing::info!("evaluation: {}", eval);
                     }
@@ -102,7 +102,7 @@ fn main() -> Result<(), anyhow::Error> {
                 Color::Black => {
                     if eval < best_eval {
                         best_eval = eval;
-                        let new_board = previous_scenario.board.make_unchecked_move(&inner_move);
+                        let new_board = previous_scenario.board.make_unchecked_move(inner_move);
                         tracing::info!("found new best move:\n{}", new_board);
                         tracing::info!("evaluation: {}", eval);
                     }

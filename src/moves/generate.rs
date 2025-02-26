@@ -16,7 +16,7 @@ impl Board {
     /// When only_critical is true only captures and stop-checks get generated.
     /// Discards the moves that leaves the moving side king in check (illegal).
     pub fn generate_moves_ordered(&self, only_critical: bool) -> Vec<Move> {
-        let mut moves = Vec::new();
+        let mut moves = Vec::with_capacity(256);
 
         for (piece, bitboard) in self.position.into_iter() {
             if piece.color != self.turn {
@@ -35,8 +35,8 @@ impl Board {
                         },
                     };
 
-                    let next_board = self.make_unchecked_move(&current_move);
-                    if next_board.position.is_in_check(current_move.piece.color) {
+                    let next_position = self.position.inner_make_unchecked_move(current_move);
+                    if next_position.is_in_check(current_move.piece.color) {
                         // the move the player made left the king in check -> not valid
                         continue;
                     }
@@ -57,7 +57,7 @@ impl Board {
                                 },
                             };
                             let eval = evaluator::utils::move_score_with_mvv_lva(
-                                &promotion,
+                                promotion,
                                 &self.position,
                             );
                             moves.push((promotion, eval));
@@ -68,18 +68,14 @@ impl Board {
                         // if i'm there it means the move is a capture or the player is in check.
                         // if the player is in check, the move that reached this part is a move that stops the check
                         // or it would have been discarded from the condition at line 39.
-                        let eval = evaluator::utils::move_score_with_mvv_lva(
-                            &current_move,
-                            &self.position,
-                        );
+                        let eval =
+                            evaluator::utils::move_score_with_mvv_lva(current_move, &self.position);
                         moves.push((current_move, eval))
                     } else if !only_critical {
                         // if i'm here it means the move is not a promotion, a capture, or a stop-check.
                         // so i add it to the moves Vec only if only_critical is not required
-                        let eval = evaluator::utils::move_score_with_mvv_lva(
-                            &current_move,
-                            &self.position,
-                        );
+                        let eval =
+                            evaluator::utils::move_score_with_mvv_lva(current_move, &self.position);
                         moves.push((current_move, eval))
                     }
                 }
@@ -95,12 +91,12 @@ impl Board {
             );
 
             if let Some(m) = castling_moves.0 {
-                let eval = evaluator::utils::move_score_with_mvv_lva(&m, &self.position);
+                let eval = evaluator::utils::move_score_with_mvv_lva(m, &self.position);
                 moves.push((m, eval))
             }
 
             if let Some(m) = castling_moves.1 {
-                let eval = evaluator::utils::move_score_with_mvv_lva(&m, &self.position);
+                let eval = evaluator::utils::move_score_with_mvv_lva(m, &self.position);
                 moves.push((m, eval))
             }
         }

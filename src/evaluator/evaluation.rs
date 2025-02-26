@@ -40,7 +40,7 @@ impl Scenario {
                 let mut max_eval = i32::MIN;
 
                 for player_move in available_moves {
-                    let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
+                    let next_scenario = Scenario::new(self.board.make_unchecked_move(player_move));
                     let inner_eval = next_scenario.minimax_alpha_beta(
                         depth - 1,
                         max_depth,
@@ -62,7 +62,7 @@ impl Scenario {
                 let mut min_eval = i32::MAX;
 
                 for player_move in available_moves {
-                    let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
+                    let next_scenario = Scenario::new(self.board.make_unchecked_move(player_move));
                     let inner_eval = next_scenario.minimax_alpha_beta(
                         depth - 1,
                         max_depth,
@@ -100,7 +100,7 @@ impl Scenario {
         available_moves
             .into_par_iter()
             .for_each_with(tx.clone(), |sender, player_move| {
-                let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
+                let next_scenario = Scenario::new(self.board.make_unchecked_move(player_move));
                 let turn = self.board.turn;
 
                 if stop_signal.load(Ordering::Acquire) {
@@ -187,7 +187,7 @@ impl Scenario {
         match self.board.turn {
             Color::White => {
                 for player_move in available_moves {
-                    let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
+                    let next_scenario = Scenario::new(self.board.make_unchecked_move(player_move));
                     let eval =
                         next_scenario.quiescence_search(alpha, beta, depth_counter + 1, max_depth);
                     if eval >= beta {
@@ -201,7 +201,7 @@ impl Scenario {
             }
             Color::Black => {
                 for player_move in available_moves {
-                    let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
+                    let next_scenario = Scenario::new(self.board.make_unchecked_move(player_move));
                     let eval =
                         next_scenario.quiescence_search(alpha, beta, depth_counter + 1, max_depth);
                     if eval <= alpha {

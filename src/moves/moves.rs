@@ -2,25 +2,25 @@ use crate::components::{
     board::Board,
     castle::CastleSide,
     constants,
-    pieces::{Bitboard, Piece, PieceKind},
+    pieces::{Piece, PieceKind},
     position::BBPosition,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum MoveKind {
     Standard {
-        from: Bitboard,
-        to: Bitboard,
+        from: u8,
+        to: u8,
     },
     Castle(CastleSide),
     Promote {
-        from: Bitboard,
-        to: Bitboard,
+        from: u8,
+        to: u8,
         to_piece: PieceKind,
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Move {
     pub piece: Piece,
     pub action: MoveKind,
@@ -31,7 +31,8 @@ impl Move {
         match self.action {
             MoveKind::Standard { from: _, to } => {
                 self.piece.kind == PieceKind::Pawn
-                    && (to.bits & constants::EIGHT_ROW != 0 || to.bits & constants::FIRST_ROW != 0)
+                    && ((1 << to) & constants::EIGHT_ROW != 0
+                        || (1 << to) & constants::FIRST_ROW != 0)
             }
             MoveKind::Castle(_) => false,
             MoveKind::Promote {
@@ -50,7 +51,7 @@ impl Move {
                 from: _,
                 to,
                 to_piece: _,
-            } => position.occupied_by(self.piece.color.other()) & to != Bitboard::new(0),
+            } => position.occupied_by(self.piece.color.other()).bits & (1 << to) != 0,
         }
     }
 }

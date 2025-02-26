@@ -44,10 +44,8 @@ impl StaticEval {
                 bits: bitboard.bits & constants::CENTRAL_MASK,
             };
             if central.bits != 0 {
-                let single_bitboards = central.single_squares();
-                for b in single_bitboards {
-                    let index = b.bits.leading_zeros();
-                    eval.add(piece.color, constants::SQUARES_VALUE[index as usize]);
+                for shift in central.single_squares() {
+                    eval.add(piece.color, constants::SQUARES_VALUE[(63 - shift) as usize]);
                 }
             }
         }

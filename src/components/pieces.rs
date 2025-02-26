@@ -161,22 +161,24 @@ impl TryFrom<char> for Piece {
     }
 }
 
+/// Produces the offset i need to right shift 1 to obtain the bitboard.
+/// I'm doing this to try to get some speed instead of storing an u64
 pub struct SingleSquareIterator {
     bits: u64,
 }
 
 impl Iterator for SingleSquareIterator {
-    type Item = Bitboard;
+    type Item = u8;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.bits == 0 {
             return None;
         }
 
-        let piece = self.bits & self.bits.wrapping_neg();
+        let offset = self.bits.trailing_zeros() as u8;
         self.bits &= self.bits - 1;
 
-        Some(Bitboard::new(piece))
+        Some(offset)
     }
 }
 
@@ -256,13 +258,6 @@ impl fmt::Display for Bitboard {
             }
         }
         Ok(())
-    }
-}
-
-impl From<u8> for Bitboard {
-    /// parse from offset
-    fn from(n: u8) -> Self {
-        Self { bits: 1 << n }
     }
 }
 

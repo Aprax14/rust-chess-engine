@@ -97,38 +97,34 @@ impl Board {
     }
 
     /// calculates how castling rights get changed by the move being made
-    fn calculate_castling_rights(&self, player_move: &Move) -> (Castle, Castle) {
-        let white_queen_rook: u64 =
-            0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_10000000;
-        let white_king_rook: u64 =
-            0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000001;
-        let black_queen_rook: u64 =
-            0b10000000_00000000_00000000_00000000_00000000_00000000_00000000_00000000;
-        let black_king_rook: u64 =
-            0b00000001_00000000_00000000_00000000_00000000_00000000_00000000_00000000;
+    fn calculate_castling_rights(&self, player_move: Move) -> (Castle, Castle) {
+        let white_queen_rook = 56;
+        let white_king_rook = 63;
+        let black_queen_rook = 0;
+        let black_king_rook = 7;
 
         let white_can_castle = match (player_move.piece.color, player_move.piece.kind) {
             (Color::White, PieceKind::King) => Castle::No,
-            (Color::White, PieceKind::Rook) => match (self.white_can_castle, &player_move.action) {
+            (Color::White, PieceKind::Rook) => match (self.white_can_castle, player_move.action) {
                 (Castle::No, _) => Castle::No,
                 (Castle::King, MoveKind::Standard { from, to: _ }) => {
-                    if from.bits & white_king_rook != 0 {
+                    if from == white_king_rook {
                         Castle::No
                     } else {
                         Castle::King
                     }
                 }
                 (Castle::Queen, MoveKind::Standard { from, to: _ }) => {
-                    if from.bits & white_queen_rook != 0 {
+                    if from == white_queen_rook {
                         Castle::No
                     } else {
                         Castle::Queen
                     }
                 }
                 (Castle::Both, MoveKind::Standard { from, to: _ }) => {
-                    if from.bits & white_king_rook != 0 {
+                    if from == white_king_rook {
                         Castle::Queen
-                    } else if from.bits & white_queen_rook != 0 {
+                    } else if from == white_queen_rook {
                         Castle::King
                     } else {
                         Castle::Both
@@ -136,7 +132,7 @@ impl Board {
                 }
                 _ => unreachable!(),
             },
-            (Color::Black, _) => match (self.white_can_castle, &player_move.action) {
+            (Color::Black, _) => match (self.white_can_castle, player_move.action) {
                 (Castle::No, _) => Castle::No,
                 (
                     Castle::King,
@@ -147,7 +143,7 @@ impl Board {
                         to_piece: _,
                     },
                 ) => {
-                    if to.bits & white_king_rook != 0 {
+                    if to == white_king_rook {
                         Castle::No
                     } else {
                         Castle::King
@@ -162,7 +158,7 @@ impl Board {
                         to_piece: _,
                     },
                 ) => {
-                    if to.bits & white_queen_rook != 0 {
+                    if to == white_queen_rook {
                         Castle::No
                     } else {
                         Castle::Queen
@@ -177,9 +173,9 @@ impl Board {
                         to_piece: _,
                     },
                 ) => {
-                    if to.bits & white_king_rook != 0 {
+                    if to == white_king_rook {
                         Castle::Queen
-                    } else if to.bits & white_queen_rook != 0 {
+                    } else if to == white_queen_rook {
                         Castle::King
                     } else {
                         Castle::Both
@@ -192,26 +188,26 @@ impl Board {
 
         let black_can_castle = match (player_move.piece.color, player_move.piece.kind) {
             (Color::Black, PieceKind::King) => Castle::No,
-            (Color::Black, PieceKind::Rook) => match (self.black_can_castle, &player_move.action) {
+            (Color::Black, PieceKind::Rook) => match (self.black_can_castle, player_move.action) {
                 (Castle::No, _) => Castle::No,
                 (Castle::King, MoveKind::Standard { from, to: _ }) => {
-                    if from.bits & black_king_rook != 0 {
+                    if from == black_king_rook {
                         Castle::No
                     } else {
                         Castle::King
                     }
                 }
                 (Castle::Queen, MoveKind::Standard { from, to: _ }) => {
-                    if from.bits & black_queen_rook != 0 {
+                    if from == black_queen_rook {
                         Castle::No
                     } else {
                         Castle::Queen
                     }
                 }
                 (Castle::Both, MoveKind::Standard { from, to: _ }) => {
-                    if from.bits & black_king_rook != 0 {
+                    if from == black_king_rook {
                         Castle::Queen
-                    } else if from.bits & black_queen_rook != 0 {
+                    } else if from == black_queen_rook {
                         Castle::King
                     } else {
                         Castle::Both
@@ -219,7 +215,7 @@ impl Board {
                 }
                 _ => unreachable!(),
             },
-            (Color::White, _) => match (self.black_can_castle, &player_move.action) {
+            (Color::White, _) => match (self.black_can_castle, player_move.action) {
                 (Castle::No, _) => Castle::No,
                 (
                     Castle::King,
@@ -230,7 +226,7 @@ impl Board {
                         to_piece: _,
                     },
                 ) => {
-                    if to.bits & black_king_rook != 0 {
+                    if to == black_king_rook {
                         Castle::No
                     } else {
                         Castle::King
@@ -245,7 +241,7 @@ impl Board {
                         to_piece: _,
                     },
                 ) => {
-                    if to.bits & black_queen_rook != 0 {
+                    if to == black_queen_rook {
                         Castle::No
                     } else {
                         Castle::Queen
@@ -260,9 +256,9 @@ impl Board {
                         to_piece: _,
                     },
                 ) => {
-                    if to.bits & black_king_rook != 0 {
+                    if to == black_king_rook {
                         Castle::Queen
-                    } else if to.bits & black_queen_rook != 0 {
+                    } else if to == black_queen_rook {
                         Castle::King
                     } else {
                         Castle::Both
@@ -277,12 +273,12 @@ impl Board {
     }
 
     /// checks if the 50 moves rules counter should be resetted
-    pub fn reset_50_moves(&self, player_move: &Move) -> bool {
+    pub fn reset_50_moves(&self, player_move: Move) -> bool {
         // suppose that the validity check already happened so a piece can not move on a square occupied by another piece of the same color.
         let occupied_cells = self.position.occupied_cells();
         if let MoveKind::Standard { from: _, to } = player_move.action {
             return player_move.piece.kind == PieceKind::Pawn
-                || (to.bits & occupied_cells.bits != 0);
+                || ((1 << to) & occupied_cells.bits != 0);
         }
 
         false
@@ -291,7 +287,7 @@ impl Board {
     /// Makes a move and updates position, turn, en passant target, castling rights and moves count.
     ///
     /// Does not prevent you to make an illegal move.
-    pub fn make_unchecked_move(&self, player_move: &Move) -> Self {
+    pub fn make_unchecked_move(&self, player_move: Move) -> Self {
         let position = self.position.inner_make_unchecked_move(player_move);
 
         let turn = self.turn.other();
