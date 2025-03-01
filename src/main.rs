@@ -9,6 +9,9 @@ mod moves;
 
 // 3k4/8/7p/2p1p1pP/1pPpPpP1/1P1P1P2/N7/2K5 w - - 0 1
 // r1b1kbnr/pppp1ppp/2n2q2/4p3/2BPP3/5N2/PPP2PPP/RNBQK2R b KQkq - 2 4
+// Above position stats:
+//  - current: ~ 12.9 s
+//  - with no moves ordering: ~ 140.1 s
 
 /*
 TODO:

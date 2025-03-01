@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::mpsc::Sender;
 use std::{cmp, i32};
 
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::{iter::ParallelIterator, prelude::*};
 
 use crate::components::pieces::Color;
 use crate::moves::moves::{Move, Scenario};
@@ -19,7 +19,7 @@ impl Scenario {
         mut beta: i32,
         depth_counter: i32,
     ) -> i32 {
-        let available_moves = self.board.generate_moves_ordered(false);
+        let mut available_moves = self.board.generate_moves(false);
 
         if available_moves.is_empty() {
             if self.board.position.is_in_check(Color::White) {
@@ -39,7 +39,8 @@ impl Scenario {
             Color::White => {
                 let mut max_eval = i32::MIN;
 
-                for player_move in available_moves {
+                for i in 0..available_moves.len() as usize {
+                    let player_move = available_moves.take(i);
                     let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
                     let inner_eval = next_scenario.minimax_alpha_beta(
                         depth - 1,
@@ -61,7 +62,8 @@ impl Scenario {
             Color::Black => {
                 let mut min_eval = i32::MAX;
 
-                for player_move in available_moves {
+                for i in 0..available_moves.len() {
+                    let player_move = available_moves.take(i);
                     let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
                     let inner_eval = next_scenario.minimax_alpha_beta(
                         depth - 1,
@@ -87,7 +89,8 @@ impl Scenario {
 
     pub fn parallel_minimax_alpha_beta(&self, depth: i32, max_depth: i32, tx: Sender<(Move, i32)>) {
         let depth_counter = 0;
-        let available_moves = self.board.generate_moves_ordered(false);
+        let mut available_moves = self.board.generate_moves(false);
+        let len = available_moves.len();
 
         let best_eval = AtomicI32::new(match self.board.turn {
             Color::White => i32::MIN,
@@ -97,9 +100,11 @@ impl Scenario {
         let main_beta = AtomicI32::new(i32::MAX);
         let stop_signal = AtomicBool::new(false);
 
-        available_moves
-            .into_par_iter()
-            .for_each_with(tx.clone(), |sender, player_move| {
+        available_moves.list[..len].sort_unstable_by(|a, b| b.1.cmp(&a.1));
+
+        available_moves.list[..available_moves.len()]
+            .par_iter()
+            .for_each_with(tx.clone(), |sender, (player_move, _)| {
                 let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
                 let turn = self.board.turn;
 
@@ -172,7 +177,7 @@ impl Scenario {
             alpha = current_eval;
         }
 
-        let available_moves = self.board.generate_moves_ordered(true);
+        let mut available_moves = self.board.generate_moves(true);
         // At this point generate_moves should have already discarded the moves that left the king in check
         if available_moves.is_empty() {
             if self.board.position.is_in_check(Color::White) {
@@ -186,7 +191,8 @@ impl Scenario {
 
         match self.board.turn {
             Color::White => {
-                for player_move in available_moves {
+                for i in 0..available_moves.len() {
+                    let player_move = available_moves.take(i);
                     let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
                     let eval =
                         next_scenario.quiescence_search(alpha, beta, depth_counter + 1, max_depth);
@@ -200,7 +206,8 @@ impl Scenario {
                 alpha
             }
             Color::Black => {
-                for player_move in available_moves {
+                for i in 0..available_moves.len() {
+                    let player_move = available_moves.take(i);
                     let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
                     let eval =
                         next_scenario.quiescence_search(alpha, beta, depth_counter + 1, max_depth);

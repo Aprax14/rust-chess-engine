@@ -1,4 +1,4 @@
-use std::cmp::Reverse;
+use std::{mem, ptr};
 
 use crate::{
     components::{board::Board, castle, pieces::PieceKind},
@@ -8,6 +8,51 @@ use strum::IntoEnumIterator;
 
 use super::moves::{Move, MoveKind};
 
+pub struct Moves {
+    pub list: [(Move, i32); 255],
+    pub len: u8,
+}
+
+impl Moves {
+    #![allow(invalid_value)]
+    fn new() -> Self {
+        Moves {
+            list: unsafe { mem::MaybeUninit::uninit().assume_init() },
+            len: 0,
+        }
+    }
+
+    fn push(&mut self, current_move: Move, rating: i32) {
+        self.list[self.len as usize] = (current_move, rating);
+        self.len += 1;
+    }
+
+    /// puts the best rated next move left from the required index to the moves len at the required index.
+    fn sort_one(&mut self, index: usize) {
+        for i in index + 1..self.len as usize {
+            if self.list[i].1 > self.list[index].1 {
+                unsafe {
+                    ptr::swap(&mut self.list[i], &mut self.list[index]);
+                }
+            }
+        }
+    }
+
+    /// Takes the best rated move left from the required index to the moves len.
+    pub fn take(&mut self, index: usize) -> Move {
+        self.sort_one(index);
+        unsafe { ptr::read(&self.list[index].0) }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn len(&self) -> usize {
+        self.len as usize
+    }
+}
+
 impl Board {
     /// returns all the possible legal moves order by the rating given to them.
     /// the rating is given according to MVV LVA:
@@ -15,8 +60,8 @@ impl Board {
     ///
     /// When only_critical is true only captures and stop-checks get generated.
     /// Discards the moves that leaves the moving side king in check (illegal).
-    pub fn generate_moves_ordered(&self, only_critical: bool) -> Vec<Move> {
-        let mut moves = Vec::with_capacity(256);
+    pub fn generate_moves(&self, only_critical: bool) -> Moves {
+        let mut moves = Moves::new();
 
         for (piece, bitboard) in self.position.into_iter() {
             if piece.color != self.turn {
@@ -60,7 +105,7 @@ impl Board {
                                 &promotion,
                                 &self.position,
                             );
-                            moves.push((promotion, eval));
+                            moves.push(promotion, eval);
                         }
                     } else if current_move.is_capture(&self.position)
                         || self.position.is_in_check(self.turn)
@@ -72,7 +117,7 @@ impl Board {
                             &current_move,
                             &self.position,
                         );
-                        moves.push((current_move, eval))
+                        moves.push(current_move, eval);
                     } else if !only_critical {
                         // if i'm here it means the move is not a promotion, a capture, or a stop-check.
                         // so i add it to the moves Vec only if only_critical is not required
@@ -80,7 +125,7 @@ impl Board {
                             &current_move,
                             &self.position,
                         );
-                        moves.push((current_move, eval))
+                        moves.push(current_move, eval);
                     }
                 }
             }
@@ -96,16 +141,15 @@ impl Board {
 
             if let Some(m) = castling_moves.0 {
                 let eval = evaluator::utils::move_score_with_mvv_lva(&m, &self.position);
-                moves.push((m, eval))
+                moves.push(m, eval);
             }
 
             if let Some(m) = castling_moves.1 {
                 let eval = evaluator::utils::move_score_with_mvv_lva(&m, &self.position);
-                moves.push((m, eval))
+                moves.push(m, eval);
             }
         }
 
-        moves.sort_unstable_by_key(|(_, rating)| Reverse(*rating));
-        moves.into_iter().map(|(m, _)| m).collect()
+        moves
     }
 }
