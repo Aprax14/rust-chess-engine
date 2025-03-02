@@ -8,40 +8,69 @@ use strum::IntoEnumIterator;
 
 use super::moves::{Move, MoveKind};
 
+#[derive(Debug, Clone, Copy)]
+pub struct RatedMove {
+    pub piece_move: Move,
+    pub rating: i32,
+}
+
+impl RatedMove {
+    pub fn new(piece_move: Move, rating: i32) -> Self {
+        RatedMove { piece_move, rating }
+    }
+}
+
+impl Default for RatedMove {
+    fn default() -> Self {
+        Self {
+            piece_move: Move {
+                piece: 'K'.try_into().expect("hardcoded piece should not fail"),
+                action: MoveKind::Standard { from: 0, to: 0 },
+            },
+            rating: i32::MIN,
+        }
+    }
+}
+
 pub struct Moves {
-    pub list: [(Move, i32); 255],
+    pub list: [RatedMove; 255],
     pub len: u8,
 }
 
 impl Moves {
-    #![allow(invalid_value)]
     fn new() -> Self {
         Moves {
-            list: unsafe { mem::MaybeUninit::uninit().assume_init() },
+            list: [RatedMove::default(); 255],
             len: 0,
         }
     }
 
     fn push(&mut self, current_move: Move, rating: i32) {
-        self.list[self.len as usize] = (current_move, rating);
+        self.list[self.len as usize] = RatedMove::new(current_move, rating);
         self.len += 1;
     }
 
-    /// puts the best rated next move left from the required index to the moves len at the required index.
+    /// puts the best rated next move, left from the required index to the moves len, at the required index.
     fn sort_one(&mut self, index: usize) {
+        let mut best_idx = index;
+        let mut best_rating = self.list[index].rating;
+
         for i in index + 1..self.len as usize {
-            if self.list[i].1 > self.list[index].1 {
-                unsafe {
-                    ptr::swap(&mut self.list[i], &mut self.list[index]);
-                }
+            if self.list[i].rating > best_rating {
+                best_idx = i;
+                best_rating = self.list[i].rating;
             }
+        }
+
+        if best_idx != index {
+            self.list.swap(index, best_idx);
         }
     }
 
     /// Takes the best rated move left from the required index to the moves len.
     pub fn take(&mut self, index: usize) -> Move {
         self.sort_one(index);
-        unsafe { ptr::read(&self.list[index].0) }
+        self.list[index].piece_move
     }
 
     pub fn is_empty(&self) -> bool {

@@ -6,6 +6,7 @@ use std::{cmp, i32};
 use rayon::{iter::ParallelIterator, prelude::*};
 
 use crate::components::pieces::Color;
+use crate::moves::generate::RatedMove;
 use crate::moves::moves::{Move, Scenario};
 
 use super::static_eval::StaticEval;
@@ -100,57 +101,68 @@ impl Scenario {
         let main_beta = AtomicI32::new(i32::MAX);
         let stop_signal = AtomicBool::new(false);
 
-        available_moves.list[..len].sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        available_moves.list[..len].sort_unstable_by(|a, b| b.rating.cmp(&a.rating));
 
         available_moves.list[..available_moves.len()]
             .par_iter()
-            .for_each_with(tx.clone(), |sender, (player_move, _)| {
-                let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
-                let turn = self.board.turn;
+            .for_each_with(
+                tx.clone(),
+                |sender,
+                 RatedMove {
+                     piece_move: player_move,
+                     rating: _,
+                 }| {
+                    let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
+                    let turn = self.board.turn;
 
-                if stop_signal.load(Ordering::Acquire) {
-                    return;
-                }
+                    if stop_signal.load(Ordering::Acquire) {
+                        return;
+                    }
 
-                let eval = next_scenario.minimax_alpha_beta(
-                    depth - 1,
-                    max_depth,
-                    main_alpha.load(Ordering::Acquire),
-                    main_beta.load(Ordering::Acquire),
-                    depth_counter + 1,
-                );
+                    let eval = next_scenario.minimax_alpha_beta(
+                        depth - 1,
+                        max_depth,
+                        main_alpha.load(Ordering::Acquire),
+                        main_beta.load(Ordering::Acquire),
+                        depth_counter + 1,
+                    );
 
-                match turn {
-                    Color::White => {
-                        best_eval.fetch_max(eval, Ordering::AcqRel);
-                        main_alpha.fetch_max(eval, Ordering::AcqRel);
+                    match turn {
+                        Color::White => {
+                            best_eval.fetch_max(eval, Ordering::AcqRel);
+                            main_alpha.fetch_max(eval, Ordering::AcqRel);
 
-                        // send evaluations while elaborating
-                        sender
-                            .send((player_move.clone(), eval))
-                            .expect("failed to send to channel");
+                            // send evaluations while elaborating
+                            sender
+                                .send((player_move.clone(), eval))
+                                .expect("failed to send to channel");
 
-                        if main_alpha.load(Ordering::Acquire) >= main_beta.load(Ordering::Acquire) {
-                            stop_signal.store(true, Ordering::Release);
-                            return;
+                            if main_alpha.load(Ordering::Acquire)
+                                >= main_beta.load(Ordering::Acquire)
+                            {
+                                stop_signal.store(true, Ordering::Release);
+                                return;
+                            }
+                        }
+                        Color::Black => {
+                            best_eval.fetch_min(eval, Ordering::AcqRel);
+                            main_beta.fetch_min(eval, Ordering::AcqRel);
+
+                            // send evaluations while elaborating
+                            sender
+                                .send((player_move.clone(), eval))
+                                .expect("failed to send to channel");
+
+                            if main_alpha.load(Ordering::Acquire)
+                                >= main_beta.load(Ordering::Acquire)
+                            {
+                                stop_signal.store(true, Ordering::Release);
+                                return;
+                            }
                         }
                     }
-                    Color::Black => {
-                        best_eval.fetch_min(eval, Ordering::AcqRel);
-                        main_beta.fetch_min(eval, Ordering::AcqRel);
-
-                        // send evaluations while elaborating
-                        sender
-                            .send((player_move.clone(), eval))
-                            .expect("failed to send to channel");
-
-                        if main_alpha.load(Ordering::Acquire) >= main_beta.load(Ordering::Acquire) {
-                            stop_signal.store(true, Ordering::Release);
-                            return;
-                        }
-                    }
-                }
-            });
+                },
+            );
 
         drop(tx);
     }
