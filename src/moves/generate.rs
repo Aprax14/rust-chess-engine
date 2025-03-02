@@ -1,5 +1,3 @@
-use std::{mem, ptr};
-
 use crate::{
     components::{board::Board, castle, pieces::PieceKind},
     evaluator,

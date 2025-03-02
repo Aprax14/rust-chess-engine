@@ -27,9 +27,8 @@ impl Scenario {
                 return i32::MIN;
             } else if self.board.position.is_in_check(Color::Black) {
                 return i32::MAX;
-            } else {
-                return 0;
             }
+            return 0;
         }
 
         if depth <= 0 {
@@ -40,7 +39,7 @@ impl Scenario {
             Color::White => {
                 let mut max_eval = i32::MIN;
 
-                for i in 0..available_moves.len() as usize {
+                for i in 0..available_moves.len() {
                     let player_move = available_moves.take(i);
                     let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
                     let inner_eval = next_scenario.minimax_alpha_beta(
@@ -112,7 +111,7 @@ impl Scenario {
                      piece_move: player_move,
                      rating: _,
                  }| {
-                    let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
+                    let next_scenario = Scenario::new(self.board.make_unchecked_move(player_move));
                     let turn = self.board.turn;
 
                     if stop_signal.load(Ordering::Acquire) {
@@ -134,7 +133,7 @@ impl Scenario {
 
                             // send evaluations while elaborating
                             sender
-                                .send((player_move.clone(), eval))
+                                .send((*player_move, eval))
                                 .expect("failed to send to channel");
 
                             if main_alpha.load(Ordering::Acquire)
@@ -150,7 +149,7 @@ impl Scenario {
 
                             // send evaluations while elaborating
                             sender
-                                .send((player_move.clone(), eval))
+                                .send((*player_move, eval))
                                 .expect("failed to send to channel");
 
                             if main_alpha.load(Ordering::Acquire)
@@ -196,9 +195,8 @@ impl Scenario {
                 return i32::MIN;
             } else if self.board.position.is_in_check(Color::Black) {
                 return i32::MAX;
-            } else {
-                return 0;
             }
+            return 0;
         }
 
         match self.board.turn {

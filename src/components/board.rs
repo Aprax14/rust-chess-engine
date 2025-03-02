@@ -288,7 +288,7 @@ impl Board {
     ///
     /// Does not prevent you to make an illegal move.
     pub fn make_unchecked_move(&self, player_move: &Move) -> Self {
-        let position = self.position.inner_make_unchecked_move(&player_move);
+        let position = self.position.inner_make_unchecked_move(player_move);
 
         let turn = self.turn.other();
 
