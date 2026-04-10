@@ -285,6 +285,43 @@ impl Board {
         false
     }
 
+    /// Returns true if the side to move has at least one non-pawn, non-king piece.
+    /// Used to guard against null move pruning in pawn-only endgames (zugzwang risk).
+    pub fn has_non_pawn_pieces(&self) -> bool {
+        match self.turn {
+            Color::White => {
+                (self.position.get('N').bits
+                    | self.position.get('B').bits
+                    | self.position.get('R').bits
+                    | self.position.get('Q').bits)
+                    != 0
+            }
+            Color::Black => {
+                (self.position.get('n').bits
+                    | self.position.get('b').bits
+                    | self.position.get('r').bits
+                    | self.position.get('q').bits)
+                    != 0
+            }
+        }
+    }
+
+    /// Passes the turn to the opponent without moving any piece.
+    ///
+    /// Only valid when the current player is not in check. Used internally by the
+    /// search algorithm for null move pruning - never played in an actual game.
+    pub fn make_null_move(&self) -> Self {
+        Board {
+            position: self.position.clone(),
+            turn: self.turn.other(),
+            en_passant_target: Bitboard::new(0),
+            white_can_castle: self.white_can_castle,
+            black_can_castle: self.black_can_castle,
+            reps_50: self.reps_50 + 1,
+            moves_count: self.moves_count + 1,
+        }
+    }
+
     /// Makes a move and updates position, turn, en passant target, castling rights and moves count.
     ///
     /// Does not prevent you to make an illegal move.

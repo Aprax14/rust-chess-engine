@@ -1,4 +1,3 @@
-#![warn(clippy::pedantic)]
 use std::cmp;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::mpsc::Sender;
@@ -10,8 +9,13 @@ use crate::moves::generate::RatedMove;
 use crate::moves::move_type::{Move, Scenario};
 
 use super::static_eval::StaticEval;
+use super::transposition::{Bound, TranspositionTable, zobrist_hash};
+
+/// Depth reduction used for null move pruning.
+const NULL_MOVE_R: i32 = 2;
 
 impl Scenario {
+    #[allow(clippy::too_many_arguments)]
     fn minimax_alpha_beta(
         &self,
         depth: i32,
@@ -19,25 +23,82 @@ impl Scenario {
         mut alpha: i32,
         mut beta: i32,
         depth_counter: i32,
+        tt: &mut TranspositionTable,
+        allow_null_move: bool,
     ) -> i32 {
+        let hash = zobrist_hash(&self.board);
+
+        // Probe the transposition table. An exact hit lets us return immediately;
+        // a bound hit narrows the alpha-beta window and may still cause a cutoff.
+        if let Some(result) = tt.probe(hash, depth) {
+            match result.bound {
+                Bound::Exact => return result.score,
+                Bound::Lower => alpha = alpha.max(result.score),
+                Bound::Upper => beta = beta.min(result.score),
+            }
+            if alpha >= beta {
+                return result.score;
+            }
+        }
+
         let mut available_moves = self.board.generate_moves(false);
 
         if available_moves.is_empty() {
-            if self.board.position.is_in_check(Color::White) {
-                return i32::MIN;
+            let score = if self.board.position.is_in_check(Color::White) {
+                i32::MIN
             } else if self.board.position.is_in_check(Color::Black) {
-                return i32::MAX;
-            }
-            return 0;
+                i32::MAX
+            } else {
+                0
+            };
+            // Terminal nodes are exact at any depth.
+            tt.store(hash, i32::MAX, score, Bound::Exact);
+            return score;
         }
 
         if depth <= 0 {
             return self.quiescence_search(alpha, beta, depth_counter, max_depth);
         }
 
+        // Null move pruning: temporarily pass the turn. If the resulting position
+        // (one free move for the opponent) still exceeds beta, the branch can be pruned.
+        // Disabled when in check or in pawn-only positions (zugzwang risk).
+        if allow_null_move && depth > NULL_MOVE_R {
+            let in_check = self.board.position.is_in_check(self.board.turn);
+
+            if !in_check && self.board.has_non_pawn_pieces() {
+                let null_scenario = Scenario::new(self.board.make_null_move());
+                let null_eval = null_scenario.minimax_alpha_beta(
+                    depth - 1 - NULL_MOVE_R,
+                    max_depth,
+                    alpha,
+                    beta,
+                    depth_counter + 1,
+                    tt,
+                    false, // no consecutive null moves
+                );
+
+                match self.board.turn {
+                    Color::White => {
+                        if null_eval >= beta {
+                            tt.store(hash, depth, beta, Bound::Lower);
+                            return beta;
+                        }
+                    }
+                    Color::Black => {
+                        if null_eval <= alpha {
+                            tt.store(hash, depth, alpha, Bound::Upper);
+                            return alpha;
+                        }
+                    }
+                }
+            }
+        }
+
         match self.board.turn {
             Color::White => {
                 let mut max_eval = i32::MIN;
+                let mut broke_early = false;
 
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.take(i);
@@ -48,19 +109,32 @@ impl Scenario {
                         alpha,
                         beta,
                         depth_counter + 1,
+                        tt,
+                        true,
                     );
                     if inner_eval > max_eval {
                         max_eval = inner_eval;
                     }
                     alpha = cmp::max(alpha, inner_eval);
                     if alpha >= beta {
+                        broke_early = true;
                         break;
                     }
                 }
+
+                // Beta cutoff → lower bound (real score may be even higher).
+                // All moves explored → exact value.
+                let bound = if broke_early {
+                    Bound::Lower
+                } else {
+                    Bound::Exact
+                };
+                tt.store(hash, depth, max_eval, bound);
                 max_eval
             }
             Color::Black => {
                 let mut min_eval = i32::MAX;
+                let mut broke_early = false;
 
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.take(i);
@@ -71,6 +145,8 @@ impl Scenario {
                         alpha,
                         beta,
                         depth_counter + 1,
+                        tt,
+                        true,
                     );
 
                     if inner_eval < min_eval {
@@ -79,9 +155,19 @@ impl Scenario {
 
                     beta = cmp::min(beta, inner_eval);
                     if alpha >= beta {
+                        broke_early = true;
                         break;
                     }
                 }
+
+                // Alpha cutoff → upper bound (real score may be even lower).
+                // All moves explored → exact value.
+                let bound = if broke_early {
+                    Bound::Upper
+                } else {
+                    Bound::Exact
+                };
+                tt.store(hash, depth, min_eval, bound);
                 min_eval
             }
         }
@@ -111,6 +197,10 @@ impl Scenario {
                      piece_move: player_move,
                      rating: _,
                  }| {
+                    // Each parallel task owns its own transposition table so that
+                    // no locking is needed between threads.
+                    let mut tt = TranspositionTable::new();
+
                     let next_scenario = Scenario::new(self.board.make_unchecked_move(player_move));
                     let turn = self.board.turn;
 
@@ -124,6 +214,8 @@ impl Scenario {
                         main_alpha.load(Ordering::Acquire),
                         main_beta.load(Ordering::Acquire),
                         depth_counter + 1,
+                        &mut tt,
+                        true,
                     );
 
                     match turn {
