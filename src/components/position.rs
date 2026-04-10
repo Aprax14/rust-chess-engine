@@ -1,12 +1,10 @@
-use std::u64;
-
 use super::{
     castle, constants,
     pieces::{Bitboard, Color, Piece, PieceKind},
 };
 use crate::moves::{
     generators,
-    moves::{Move, MoveKind},
+    move_type::{Move, MoveKind},
 };
 
 #[derive(Debug, Clone)]

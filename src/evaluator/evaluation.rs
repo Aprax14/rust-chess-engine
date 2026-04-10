@@ -1,13 +1,13 @@
 #![warn(clippy::pedantic)]
+use std::cmp;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::mpsc::Sender;
-use std::{cmp, i32};
 
 use rayon::{iter::ParallelIterator, prelude::*};
 
 use crate::components::pieces::Color;
 use crate::moves::generate::RatedMove;
-use crate::moves::moves::{Move, Scenario};
+use crate::moves::move_type::{Move, Scenario};
 
 use super::static_eval::StaticEval;
 
@@ -140,7 +140,6 @@ impl Scenario {
                                 >= main_beta.load(Ordering::Acquire)
                             {
                                 stop_signal.store(true, Ordering::Release);
-                                return;
                             }
                         }
                         Color::Black => {
@@ -156,7 +155,6 @@ impl Scenario {
                                 >= main_beta.load(Ordering::Acquire)
                             {
                                 stop_signal.store(true, Ordering::Release);
-                                return;
                             }
                         }
                     }

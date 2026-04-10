@@ -1,3 +1,3 @@
 pub mod generate;
 pub mod generators;
-pub mod moves;
+pub mod move_type;

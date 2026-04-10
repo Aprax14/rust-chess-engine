@@ -4,7 +4,7 @@ use crate::{
         pieces::{Bitboard, Piece, PieceKind},
         position::BBPosition,
     },
-    moves::moves::{Move, MoveKind},
+    moves::move_type::{Move, MoveKind},
 };
 
 pub fn attacked_squares_score(

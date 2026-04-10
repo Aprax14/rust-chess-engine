@@ -2,7 +2,7 @@ use std::fmt;
 
 use anyhow::anyhow;
 
-use crate::moves::moves::{Move, MoveKind};
+use crate::moves::move_type::{Move, MoveKind};
 
 use super::{
     castle::Castle,
@@ -14,6 +14,7 @@ use super::{
 pub struct Board {
     pub position: BBPosition,
     pub turn: Color,
+    #[expect(unused)]
     pub en_passant_target: Bitboard,
     pub white_can_castle: Castle,
     pub black_can_castle: Castle,

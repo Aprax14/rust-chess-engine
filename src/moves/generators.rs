@@ -42,10 +42,10 @@ pub fn black_pawn_attack(
 /// Running the function with blockers == 0 returns all possbile advancing move, without any blocking pieces in front of the pawn.
 pub fn white_pawn_quiet_moves(starting_position: Bitboard, blockers: Bitboard) -> Bitboard {
     if starting_position.bits & constants::SECOND_ROW != 0 {
-        return (starting_position << 8 & !blockers)
-            | (starting_position << 16 & !blockers & !(blockers << 8));
+        (starting_position << 8 & !blockers)
+            | (starting_position << 16 & !blockers & !(blockers << 8))
     } else {
-        return starting_position << 8 & !blockers;
+        starting_position << 8 & !blockers
     }
 }
 

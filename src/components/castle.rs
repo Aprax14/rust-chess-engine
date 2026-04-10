@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 
-use crate::moves::moves::{Move, MoveKind};
+use crate::moves::move_type::{Move, MoveKind};
 
 use super::{
     board::Board,

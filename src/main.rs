@@ -1,7 +1,7 @@
 use std::{io, sync::mpsc, thread, time::Instant};
 
 use components::{board::Board, pieces::Color};
-use moves::moves::{Move, Scenario};
+use moves::move_type::{Move, Scenario};
 
 mod components;
 mod evaluator;

@@ -4,7 +4,7 @@ use crate::{
 };
 use strum::IntoEnumIterator;
 
-use super::moves::{Move, MoveKind};
+use super::move_type::{Move, MoveKind};
 
 #[derive(Debug, Clone, Copy)]
 pub struct RatedMove {
