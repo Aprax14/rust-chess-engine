@@ -1,1 +1,26 @@
-Refactor of an old Rust chess engine project. Just for fun.
+# corman
+
+A chess engine written in Rust, built for fun in my free time.
+
+## How it works
+
+The engine uses a bitboard-based board representation and searches with alpha-beta minimax. A few things it does:
+
+- **Move ordering** via MVV-LVA to get better alpha-beta cutoffs
+- **Quiescence search** to avoid the horizon effect on captures
+- **Null move pruning** to speed up the search
+- **Transposition table** with Zobrist hashing to avoid re-evaluating the same position
+- **Parallel search** at the root using rayon
+- Static evaluation based on material, piece-square tables, and attacked squares
+
+It uses UCI protocol, so you can plug it into any UCI-compatible GUI or lichess-bot.
+
+## Building
+
+```bash
+cargo build --release
+```
+
+---
+
+Btw: Cornelia 🐈 + Norman 🐈‍⬛ = Corman. They're my cats.
