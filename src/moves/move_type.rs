@@ -63,8 +63,6 @@ pub struct Scenario {
 
 impl Scenario {
     pub fn new(board: Board) -> Self {
-        Self {
-            board: board.clone(),
-        }
+        Self { board }
     }
 }
