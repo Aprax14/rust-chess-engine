@@ -28,3 +28,27 @@ pub const SQUARES_VALUE: [i32; 64] = [
 pub const ATTACKED_EMPTY_SQUARE_VALUE: i32 = 50;
 pub const CASTLING_VALUE: i32 = 1000;
 pub const PROMOTION_VALUE: i32 = 9000;
+
+/// We consider to be in an endgame when we are below this amount of material
+pub const ENDGAME_MATERIAL_THRESHOLD: i32 = 20_000;
+
+/// King piece-square table for the middlegame.
+///
+/// Rewards the castled squares and
+/// penalises an exposed king in the centre.
+pub const KING_MIDDLEGAME_TABLE: [i32; 64] = [
+    -50, 0, 300, -200, -300, 0, 300, -50, -100, -100, -100, -100, -100, -100, -100, -100, -200,
+    -200, -200, -200, -200, -200, -200, -200, -300, -300, -300, -300, -300, -300, -300, -300, -300,
+    -300, -300, -300, -300, -300, -300, -300, -200, -200, -200, -200, -200, -200, -200, -200, -100,
+    -100, -100, -100, -100, -100, -100, -100, -50, 0, 300, -200, -300, 0, 300, -50,
+];
+
+/// King piece-square table for the endgame.
+///
+/// Rewards centralisation: the king becomes an active piece once queens are off.
+pub const KING_ENDGAME_TABLE: [i32; 64] = [
+    -100, -50, -50, 0, 0, -50, -50, -100, -50, 50, 100, 100, 100, 100, 50, -50, -50, 100, 150, 200,
+    200, 150, 100, -50, -50, 100, 200, 250, 250, 200, 100, -50, -50, 100, 200, 250, 250, 200, 100,
+    -50, -50, 100, 150, 200, 200, 150, 100, -50, -50, 50, 100, 100, 100, 100, 50, -50, -100, -50,
+    -50, 0, 0, -50, -50, -100,
+];

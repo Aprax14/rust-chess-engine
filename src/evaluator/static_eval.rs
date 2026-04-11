@@ -1,7 +1,7 @@
 use crate::components::{
     board::Board,
     constants,
-    pieces::{Bitboard, Color},
+    pieces::{Bitboard, Color, PieceKind},
 };
 
 use super::utils;
@@ -39,13 +39,23 @@ impl StaticEval {
             let attacks_score = utils::attacked_squares_score(&board.position, *piece, *bitboard);
             eval.add(piece.color, attacks_score);
 
-            // consider the central position of the pieces:
-            let central = Bitboard {
-                bits: bitboard.bits & constants::CENTRAL_MASK,
-            };
-            if central.bits != 0 {
-                for shift in central.single_squares() {
-                    eval.add(piece.color, constants::SQUARES_VALUE[(63 - shift) as usize]);
+            if piece.kind == PieceKind::King {
+                let table = if board.is_endgame() {
+                    &constants::KING_ENDGAME_TABLE
+                } else {
+                    &constants::KING_MIDDLEGAME_TABLE
+                };
+                for shift in bitboard.single_squares() {
+                    eval.add(piece.color, table[(63 - shift) as usize]);
+                }
+            } else {
+                let central = Bitboard {
+                    bits: bitboard.bits & constants::CENTRAL_MASK,
+                };
+                if central.bits != 0 {
+                    for shift in central.single_squares() {
+                        eval.add(piece.color, constants::SQUARES_VALUE[(63 - shift) as usize]);
+                    }
                 }
             }
         }

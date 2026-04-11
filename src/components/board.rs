@@ -6,6 +6,7 @@ use crate::moves::move_type::{Move, MoveKind};
 
 use super::{
     castle::Castle,
+    constants,
     pieces::{Bitboard, Color, PieceKind},
     position::BBPosition,
 };
@@ -281,6 +282,19 @@ impl Board {
             }
             _ => false,
         }
+    }
+
+    /// Returns true when total material (both sides, excluding kings) is below
+    /// the endgame threshold, signalling that king centralisation is preferred
+    /// over king safety on the back rank.
+    pub fn is_endgame(&self) -> bool {
+        let total_material: i32 = (&self.position)
+            .into_iter()
+            .filter(|(piece, _)| piece.kind != PieceKind::King)
+            .map(|(piece, bitboard)| bitboard.count_bits() * piece.kind.value())
+            .sum();
+
+        total_material < constants::ENDGAME_MATERIAL_THRESHOLD
     }
 
     /// Returns true if the side to move has at least one non-pawn, non-king piece.
