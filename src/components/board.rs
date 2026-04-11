@@ -5,8 +5,8 @@ use anyhow::anyhow;
 use crate::moves::move_type::{Move, MoveKind};
 
 use super::{
-    castle::Castle,
-    constants,
+    castle::{Castle, CastleSide},
+    constants, hash,
     pieces::{Bitboard, Color, PieceKind},
     position::BBPosition,
 };
@@ -18,6 +18,7 @@ pub struct Board {
     pub en_passant_target: Bitboard,
     pub white_can_castle: Castle,
     pub black_can_castle: Castle,
+    pub hash: u64,
     pub reps_50: u8,
     pub moves_count: u32,
 }
@@ -81,12 +82,25 @@ impl Board {
         let reps_50: u8 = reps_50.parse()?;
         let moves_count: u32 = moves_count.parse()?;
 
+        // Compute the Zobrist hash from scratch once at construction time.
+        // All subsequent positions update it incrementally in make_unchecked_move.
+        let mut h = hash::castle_rights_hash(white_can_castle, black_can_castle);
+        if turn == Color::White {
+            h ^= hash::side_to_move_hash();
+        }
+        for (piece, bitboard) in &position {
+            for sq in bitboard.single_squares() {
+                h ^= hash::piece_square_hash(piece.color, piece.kind, sq);
+            }
+        }
+
         Ok(Self {
             position,
             turn,
             en_passant_target,
             white_can_castle,
             black_can_castle,
+            hash: h,
             reps_50,
             moves_count,
         })
@@ -329,6 +343,8 @@ impl Board {
             en_passant_target: Bitboard::new(0),
             white_can_castle: self.white_can_castle,
             black_can_castle: self.black_can_castle,
+            // No piece changes, castling rights unchanged, only side-to-move flips.
+            hash: self.hash ^ hash::side_to_move_hash(),
             reps_50: self.reps_50 + 1,
             moves_count: self.moves_count + 1,
         }
@@ -351,14 +367,87 @@ impl Board {
         };
         let moves_count = self.moves_count + 1;
 
+        let hash = self.incremental_hash(player_move, white_can_castle, black_can_castle);
+
         Board {
             position,
             turn,
             en_passant_target,
             white_can_castle,
             black_can_castle,
+            hash,
             reps_50,
             moves_count,
+        }
+    }
+
+    /// Computes the Zobrist hash for the position that results from applying
+    /// a `player_move`, using an incremental XOR update instead of
+    /// recomputing from scratch.
+    fn incremental_hash(
+        &self,
+        player_move: &Move,
+        new_white_castle: Castle,
+        new_black_castle: Castle,
+    ) -> u64 {
+        let mut h = self.hash;
+
+        // Flip side to move.
+        h ^= hash::side_to_move_hash();
+
+        // Transition castling rights: cancel old bits, apply new bits.
+        h ^= hash::castle_rights_hash(self.white_can_castle, self.black_can_castle);
+        h ^= hash::castle_rights_hash(new_white_castle, new_black_castle);
+
+        match player_move.action {
+            MoveKind::Standard { from, to } => {
+                h ^= hash::piece_square_hash(player_move.piece.color, player_move.piece.kind, from);
+                if let Some(captured) = self.position.piece_at(to) {
+                    h ^= hash::piece_square_hash(captured.color, captured.kind, to);
+                }
+                h ^= hash::piece_square_hash(player_move.piece.color, player_move.piece.kind, to);
+            }
+            MoveKind::Castle(side) => {
+                let (king_from, king_to, rook_from, rook_to) =
+                    Self::castle_piece_squares(player_move.piece.color, side);
+                h ^= hash::piece_square_hash(player_move.piece.color, PieceKind::King, king_from);
+                h ^= hash::piece_square_hash(player_move.piece.color, PieceKind::King, king_to);
+                h ^= hash::piece_square_hash(player_move.piece.color, PieceKind::Rook, rook_from);
+                h ^= hash::piece_square_hash(player_move.piece.color, PieceKind::Rook, rook_to);
+            }
+            MoveKind::EnPassant { from, to } => {
+                h ^= hash::piece_square_hash(player_move.piece.color, PieceKind::Pawn, from);
+                h ^= hash::piece_square_hash(player_move.piece.color, PieceKind::Pawn, to);
+                // Captured pawn sits one rank behind the landing square.
+                let captured_sq = match player_move.piece.color {
+                    Color::White => to - 8,
+                    Color::Black => to + 8,
+                };
+                h ^= hash::piece_square_hash(
+                    player_move.piece.color.other(),
+                    PieceKind::Pawn,
+                    captured_sq,
+                );
+            }
+            MoveKind::Promote { from, to, to_piece } => {
+                h ^= hash::piece_square_hash(player_move.piece.color, PieceKind::Pawn, from);
+                if let Some(captured) = self.position.piece_at(to) {
+                    h ^= hash::piece_square_hash(captured.color, captured.kind, to);
+                }
+                h ^= hash::piece_square_hash(player_move.piece.color, to_piece, to);
+            }
+        }
+
+        h
+    }
+
+    /// Returns (king_from, king_to, rook_from, rook_to) bit positions for a castling move.
+    fn castle_piece_squares(color: Color, side: CastleSide) -> (u8, u8, u8, u8) {
+        match (color, side) {
+            (Color::White, CastleSide::King) => (3, 1, 0, 2), // e1→g1, h1→f1
+            (Color::White, CastleSide::Queen) => (3, 5, 7, 4), // e1→c1, a1→d1
+            (Color::Black, CastleSide::King) => (59, 57, 56, 58), // e8→g8, h8→f8
+            (Color::Black, CastleSide::Queen) => (59, 61, 63, 60), // e8→c8, a8→d8
         }
     }
 }

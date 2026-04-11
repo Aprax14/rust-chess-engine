@@ -1,85 +1,3 @@
-use std::sync::OnceLock;
-
-use crate::components::{
-    board::Board,
-    castle::Castle,
-    pieces::{Color, PieceKind},
-};
-
-// Layout of the Zobrist random table:
-//   [0 .. 768)  = piece (12 types) × square (64)
-//   [768]       = side to move (White)
-//   [769]       = white can castle kingside
-//   [770]       = white can castle queenside
-//   [771]       = black can castle kingside
-//   [772]       = black can castle queenside
-const ZOBRIST_SIZE: usize = 773;
-static ZOBRIST_TABLE: OnceLock<[u64; ZOBRIST_SIZE]> = OnceLock::new();
-
-fn xorshift64(state: &mut u64) -> u64 {
-    *state ^= *state << 13;
-    *state ^= *state >> 7;
-    *state ^= *state << 17;
-    *state
-}
-
-fn init_zobrist() -> [u64; ZOBRIST_SIZE] {
-    let mut state: u64 = 0x123_4567_89AB_CDEF;
-    let mut table = [0u64; ZOBRIST_SIZE];
-    for val in &mut table {
-        *val = xorshift64(&mut state);
-    }
-    table
-}
-
-fn piece_index(color: Color, kind: PieceKind) -> usize {
-    let color_offset = match color {
-        Color::White => 0,
-        Color::Black => 6,
-    };
-    let kind_offset = match kind {
-        PieceKind::Pawn => 0,
-        PieceKind::Knight => 1,
-        PieceKind::Bishop => 2,
-        PieceKind::Rook => 3,
-        PieceKind::Queen => 4,
-        PieceKind::King => 5,
-    };
-    color_offset + kind_offset
-}
-
-/// Computes the Zobrist hash of a board position from scratch.
-pub fn zobrist_hash(board: &Board) -> u64 {
-    let table = ZOBRIST_TABLE.get_or_init(init_zobrist);
-    let mut hash = 0u64;
-
-    for (piece, bitboard) in &board.position {
-        let pidx = piece_index(piece.color, piece.kind);
-        for square in bitboard.single_squares() {
-            hash ^= table[pidx * 64 + square as usize];
-        }
-    }
-
-    if board.turn == Color::White {
-        hash ^= table[768];
-    }
-
-    if matches!(board.white_can_castle, Castle::King | Castle::Both) {
-        hash ^= table[769];
-    }
-    if matches!(board.white_can_castle, Castle::Queen | Castle::Both) {
-        hash ^= table[770];
-    }
-    if matches!(board.black_can_castle, Castle::King | Castle::Both) {
-        hash ^= table[771];
-    }
-    if matches!(board.black_can_castle, Castle::Queen | Castle::Both) {
-        hash ^= table[772];
-    }
-
-    hash
-}
-
 /// Describes the reliability of a stored score relative to the true minimax value.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Bound {
@@ -113,6 +31,12 @@ pub struct ProbeResult {
     pub bound: Bound,
 }
 
+/// The general idea of a transposition table is to store all positions already evaluated using a hash.
+/// 1. Build the ZOBRIST_TABLE: a fixed array of random u64 values.
+/// 2. Each piece type, square, castling right, and side to move maps to a unique index in ZOBRIST_TABLE (the value is its hash).
+/// 3. XORing together all the values for the current position yields a single hash representing that position.
+/// 4. At TranspositionTable.table[hash & mask] we store the evaluation result for that position.
+/// 5. The mask is applied to the hash to index into a fixed-size table, keeping memory usage bounded.
 pub struct TranspositionTable {
     table: Vec<TtEntry>,
     mask: usize,

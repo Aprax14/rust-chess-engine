@@ -9,7 +9,7 @@ use crate::moves::generate::RatedMove;
 use crate::moves::move_type::{Move, Scenario};
 
 use super::static_eval::StaticEval;
-use super::transposition::{Bound, TranspositionTable, zobrist_hash};
+use super::transposition::{Bound, TranspositionTable};
 
 /// Depth reduction used for null move pruning.
 const NULL_MOVE_R: i32 = 2;
@@ -26,11 +26,9 @@ impl Scenario {
         tt: &mut TranspositionTable,
         allow_null_move: bool,
     ) -> i32 {
-        let hash = zobrist_hash(&self.board);
-
         // Probe the transposition table. An exact hit lets us return immediately;
         // a bound hit narrows the alpha-beta window and may still cause a cutoff.
-        if let Some(result) = tt.probe(hash, depth) {
+        if let Some(result) = tt.probe(self.board.hash, depth) {
             match result.bound {
                 Bound::Exact => return result.score,
                 Bound::Lower => alpha = alpha.max(result.score),
@@ -52,7 +50,7 @@ impl Scenario {
                 0
             };
             // Terminal nodes are exact at any depth.
-            tt.store(hash, i32::MAX, score, Bound::Exact);
+            tt.store(self.board.hash, i32::MAX, score, Bound::Exact);
             return score;
         }
 
@@ -81,13 +79,13 @@ impl Scenario {
                 match self.board.turn {
                     Color::White => {
                         if null_eval >= beta {
-                            tt.store(hash, depth, beta, Bound::Lower);
+                            tt.store(self.board.hash, depth, beta, Bound::Lower);
                             return beta;
                         }
                     }
                     Color::Black => {
                         if null_eval <= alpha {
-                            tt.store(hash, depth, alpha, Bound::Upper);
+                            tt.store(self.board.hash, depth, alpha, Bound::Upper);
                             return alpha;
                         }
                     }
@@ -129,7 +127,7 @@ impl Scenario {
                 } else {
                     Bound::Exact
                 };
-                tt.store(hash, depth, max_eval, bound);
+                tt.store(self.board.hash, depth, max_eval, bound);
                 max_eval
             }
             Color::Black => {
@@ -167,7 +165,7 @@ impl Scenario {
                 } else {
                     Bound::Exact
                 };
-                tt.store(hash, depth, min_eval, bound);
+                tt.store(self.board.hash, depth, min_eval, bound);
                 min_eval
             }
         }
