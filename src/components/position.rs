@@ -1,5 +1,5 @@
 use super::{
-    castle, constants,
+    castle, constants, en_passant,
     pieces::{Bitboard, Color, Piece, PieceKind},
 };
 use crate::moves::{
@@ -395,6 +395,7 @@ impl BBPosition {
             MoveKind::Castle(side) => {
                 castle::bitboards_after_castling(self, player_move.piece.color, side)
             }
+            MoveKind::EnPassant { .. } => en_passant::bitboards_after_en_passant(self, player_move),
             MoveKind::Promote { from, to, to_piece } => {
                 let from_bb = Bitboard::new(1 << from);
                 let to_bb = Bitboard::new(1 << to);

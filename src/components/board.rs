@@ -14,7 +14,6 @@ use super::{
 pub struct Board {
     pub position: BBPosition,
     pub turn: Color,
-    #[expect(unused)]
     pub en_passant_target: Bitboard,
     pub white_can_castle: Castle,
     pub black_can_castle: Castle,
@@ -275,14 +274,14 @@ impl Board {
 
     /// checks if the 50 moves rules counter should be resetted
     pub fn reset_50_moves(&self, player_move: &Move) -> bool {
-        // suppose that the validity check already happened so a piece can not move on a square occupied by another piece of the same color.
-        let occupied_cells = self.position.occupied_cells();
-        if let MoveKind::Standard { from: _, to } = player_move.action {
-            return player_move.piece.kind == PieceKind::Pawn
-                || ((1 << to) & occupied_cells.bits != 0);
+        match player_move.action {
+            MoveKind::EnPassant { .. } => true,
+            MoveKind::Standard { from: _, to } => {
+                player_move.piece.kind == PieceKind::Pawn
+                    || ((1 << to) & self.position.occupied_cells().bits != 0)
+            }
+            _ => false,
         }
-
-        false
     }
 
     /// Returns true if the side to move has at least one non-pawn, non-king piece.

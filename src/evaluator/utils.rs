@@ -28,6 +28,13 @@ pub fn attacked_squares_score(
 fn inner_move_score_no_captures(m: &Move, board_position: &BBPosition) -> i32 {
     match m.action {
         MoveKind::Castle(_) => constants::CASTLING_VALUE,
+        MoveKind::EnPassant { from: _, to } => {
+            if board_position.square_is_defended_by(to, m.piece.color.other()) {
+                0
+            } else {
+                PieceKind::Pawn.value()
+            }
+        }
         MoveKind::Standard { from, to } => {
             let attacked_before =
                 attacked_squares_score(board_position, m.piece, Bitboard::new(1 << from));
@@ -48,6 +55,15 @@ fn inner_move_score_no_captures(m: &Move, board_position: &BBPosition) -> i32 {
 pub fn move_score_with_mvv_lva(m: &Move, board_position: &BBPosition) -> i32 {
     match m.action {
         MoveKind::Castle(_) => constants::CASTLING_VALUE,
+        // En passant always captures a pawn of equal value (pawn for pawn).
+        // The target square is empty, but it can still be defended by another piece.
+        MoveKind::EnPassant { from: _, to } => {
+            if board_position.square_is_defended_by(to, m.piece.color.other()) {
+                0
+            } else {
+                PieceKind::Pawn.value()
+            }
+        }
         MoveKind::Standard { from, to } => {
             let Some(victim) = board_position.piece_at(to) else {
                 return inner_move_score_no_captures(m, board_position);

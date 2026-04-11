@@ -1,5 +1,5 @@
 use crate::{
-    components::{board::Board, castle, pieces::PieceKind},
+    components::{board::Board, castle, en_passant, pieces::PieceKind},
     evaluator,
 };
 use strum::IntoEnumIterator;
@@ -175,6 +175,17 @@ impl Board {
                 let eval = evaluator::utils::move_score_with_mvv_lva(&m, &self.position);
                 moves.push(m, eval);
             }
+        }
+
+        // En passant is always a capture, so generate it in both full and critical mode.
+        let ep_moves = en_passant::available_en_passant_moves(self);
+        for ep_move in [ep_moves.0, ep_moves.1].into_iter().flatten() {
+            let next_position = self.position.inner_make_unchecked_move(&ep_move);
+            if next_position.is_in_check(ep_move.piece.color) {
+                continue;
+            }
+            let eval = evaluator::utils::move_score_with_mvv_lva(&ep_move, &self.position);
+            moves.push(ep_move, eval);
         }
 
         moves

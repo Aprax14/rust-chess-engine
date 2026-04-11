@@ -18,6 +18,12 @@ pub enum MoveKind {
         to: u8,
         to_piece: PieceKind,
     },
+    /// En passant capture: the capturing pawn moves from `from` to `to`,
+    /// and the captured pawn (sitting one rank behind `to`) is removed.
+    EnPassant {
+        from: u8,
+        to: u8,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -34,7 +40,7 @@ impl Move {
                     && ((1 << to) & constants::EIGHT_ROW != 0
                         || (1 << to) & constants::FIRST_ROW != 0)
             }
-            MoveKind::Castle(_) => false,
+            MoveKind::Castle(_) | MoveKind::EnPassant { .. } => false,
             MoveKind::Promote {
                 from: _,
                 to: _,
@@ -46,6 +52,7 @@ impl Move {
     pub fn is_capture(&self, position: &BBPosition) -> bool {
         match self.action {
             MoveKind::Castle(_) => false,
+            MoveKind::EnPassant { .. } => true,
             MoveKind::Standard { from: _, to }
             | MoveKind::Promote {
                 from: _,
