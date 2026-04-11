@@ -1,15 +1,15 @@
 use crate::components::{constants, pieces::Bitboard};
 
 /*
-8 0 0 0 0 0 0 0 0
-7 0 0 0 0 0 0 0 0
-6 0 0 0 0 0 0 0 0
-5 0 0 0 0 0 0 0 0
-4 0 0 0 0 0 0 0 0
-3 0 0 0 0 0 0 0 0
-2 0 0 0 0 0 0 0 0
-1 0 0 0 0 0 0 0 0
-  a b c d e f g h
+* 8 0 0 0 0 0 0 0 0
+* 7 0 0 0 0 0 0 0 0
+* 6 0 0 0 0 0 0 0 0
+* 5 0 0 0 0 0 0 0 0
+* 4 0 0 0 0 0 0 0 0
+* 3 0 0 0 0 0 0 0 0
+* 2 0 0 0 0 0 0 0 0
+* 1 0 0 0 0 0 0 0 0
+*   a b c d e f g h
 */
 
 /// Returns all the possibile white pawns attacking moves.
@@ -93,134 +93,142 @@ pub fn knight(starting_position: Bitboard, blockers: Bitboard, _enemies: Bitboar
     )
 }
 
+fn bishop_single(sq: u8, blockers: Bitboard, enemies: Bitboard) -> u64 {
+    let mut bits = 0u64;
+    let row = (sq / 8) as i32;
+    let col = (sq % 8) as i32;
+
+    let mut r = row + 1;
+    let mut c = col + 1;
+    while r < 8 && c < 8 {
+        let pos: u64 = 1 << (r * 8 + c);
+        if pos & blockers.bits != 0 {
+            break;
+        }
+        bits |= pos;
+        if pos & enemies.bits != 0 {
+            break;
+        }
+        r += 1;
+        c += 1;
+    }
+
+    r = row + 1;
+    c = col - 1;
+    while r < 8 && c >= 0 {
+        let pos: u64 = 1 << (r * 8 + c);
+        if pos & blockers.bits != 0 {
+            break;
+        }
+        bits |= pos;
+        if pos & enemies.bits != 0 {
+            break;
+        }
+        r += 1;
+        c -= 1;
+    }
+
+    r = row - 1;
+    c = col + 1;
+    while r >= 0 && c < 8 {
+        let pos: u64 = 1 << (r * 8 + c);
+        if pos & blockers.bits != 0 {
+            break;
+        }
+        bits |= pos;
+        if pos & enemies.bits != 0 {
+            break;
+        }
+        r -= 1;
+        c += 1;
+    }
+
+    r = row - 1;
+    c = col - 1;
+    while r >= 0 && c >= 0 {
+        let pos: u64 = 1 << (r * 8 + c);
+        if pos & blockers.bits != 0 {
+            break;
+        }
+        bits |= pos;
+        if pos & enemies.bits != 0 {
+            break;
+        }
+        r -= 1;
+        c -= 1;
+    }
+
+    bits
+}
+
 /// blockers = pieces of the same color
 pub fn bishop(starting_position: Bitboard, blockers: Bitboard, enemies: Bitboard) -> Bitboard {
-    let mut bitboard = Bitboard { bits: 0 };
-    let offset = 63 - starting_position.bits.leading_zeros();
-    let row = offset / 8;
-    let column_from_end = offset % 8;
+    let mut result = Bitboard { bits: 0 };
+    for sq in starting_position.single_squares() {
+        result.bits |= bishop_single(sq, blockers, enemies);
+    }
+    result
+}
 
-    let mut moving_row = row as i32 + 1;
-    let mut moving_col: i32 = column_from_end as i32 + 1;
+fn rook_single(sq: u8, blockers: Bitboard, enemies: Bitboard) -> u64 {
+    let mut bits = 0u64;
+    let row = (sq / 8) as u32;
+    let col = (sq % 8) as u32;
 
-    while moving_row < 8 && moving_col < 8 {
-        let add_position: u64 = 1 << (moving_row * 8 + moving_col);
-        // there is a blocking piece, i don't have to consider this move
-        if add_position & blockers.bits != 0 {
+    for r in row + 1..8 {
+        let pos = 1u64 << (r * 8 + col);
+        if pos & blockers.bits != 0 {
             break;
         }
-        bitboard.bits |= add_position;
-        // there is an enemy piece, i need to consider this move but then i need to stop
-        if add_position & enemies.bits != 0 {
+        bits |= pos;
+        if pos & enemies.bits != 0 {
             break;
         }
-        moving_row += 1;
-        moving_col += 1;
     }
 
-    moving_row = row as i32 + 1;
-    moving_col = column_from_end as i32 - 1;
-
-    while moving_row < 8 && moving_col >= 0 {
-        let add_position: u64 = 1 << (moving_row * 8 + moving_col);
-        if add_position & blockers.bits != 0 {
+    for r in (0..row).rev() {
+        let pos = 1u64 << (r * 8 + col);
+        if pos & blockers.bits != 0 {
             break;
         }
-        bitboard.bits |= add_position;
-        if add_position & enemies.bits != 0 {
+        bits |= pos;
+        if pos & enemies.bits != 0 {
             break;
         }
-        moving_row += 1;
-        moving_col -= 1;
     }
 
-    moving_row = row as i32 - 1;
-    moving_col = column_from_end as i32 + 1;
-
-    while moving_row >= 0 && moving_col < 8 {
-        let add_position: u64 = 1 << (moving_row * 8 + moving_col);
-        if add_position & blockers.bits != 0 {
+    for c in col + 1..8 {
+        let pos = 1u64 << (row * 8 + c);
+        if pos & blockers.bits != 0 {
             break;
         }
-        bitboard.bits |= add_position;
-        if add_position & enemies.bits != 0 {
+        bits |= pos;
+        if pos & enemies.bits != 0 {
             break;
         }
-        moving_row -= 1;
-        moving_col += 1;
     }
 
-    moving_row = row as i32 - 1;
-    moving_col = column_from_end as i32 - 1;
-
-    while moving_row >= 0 && moving_col >= 0 {
-        let add_position: u64 = 1 << (moving_row * 8 + moving_col);
-        if add_position & blockers.bits != 0 {
+    for c in (0..col).rev() {
+        let pos = 1u64 << (row * 8 + c);
+        if pos & blockers.bits != 0 {
             break;
         }
-        bitboard.bits |= add_position;
-        if add_position & enemies.bits != 0 {
+        bits |= pos;
+        if pos & enemies.bits != 0 {
             break;
         }
-        moving_row -= 1;
-        moving_col -= 1;
     }
 
-    bitboard
+    bits
 }
 
 /// blockers = pieces of the same color
 pub fn rook(starting_position: Bitboard, blockers: Bitboard, enemies: Bitboard) -> Bitboard {
-    let mut bitboard = Bitboard { bits: 0 };
-    let offset = 63 - starting_position.bits.leading_zeros();
-    let row = offset / 8;
-    let column_from_end = offset % 8;
-
-    for moving_row in row + 1..8 {
-        let add_pos = 1 << (moving_row * 8 + column_from_end);
-        if add_pos & blockers.bits != 0 {
-            break;
-        }
-        bitboard.bits |= add_pos;
-        if add_pos & enemies.bits != 0 {
-            break;
-        }
+    let mut result = Bitboard { bits: 0 };
+    for sq in starting_position.single_squares() {
+        result.bits |= rook_single(sq, blockers, enemies);
     }
-
-    for moving_row in (0..row).rev() {
-        let add_pos = 1 << (moving_row * 8 + column_from_end);
-        if add_pos & blockers.bits != 0 {
-            break;
-        }
-        bitboard.bits |= add_pos;
-        if add_pos & enemies.bits != 0 {
-            break;
-        }
-    }
-
-    for moving_col in column_from_end + 1..8 {
-        let add_pos = 1 << (row * 8 + moving_col);
-        if add_pos & blockers.bits != 0 {
-            break;
-        }
-        bitboard.bits |= add_pos;
-        if add_pos & enemies.bits != 0 {
-            break;
-        }
-    }
-
-    for moving_col in (0..column_from_end).rev() {
-        let add_pos = 1 << (row * 8 + moving_col);
-        if add_pos & blockers.bits != 0 {
-            break;
-        }
-        bitboard.bits |= add_pos;
-        if add_pos & enemies.bits != 0 {
-            break;
-        }
-    }
-
-    bitboard
+    result
 }
 
 /// blockers = pieces of the same color

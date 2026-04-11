@@ -141,7 +141,7 @@ impl BBPosition {
         T: TryInto<Piece>,
         T::Error: std::fmt::Debug,
     {
-        let piece = piece.try_into().expect("piece conversion faield");
+        let piece = piece.try_into().expect("piece conversion failed");
         match (piece.color, piece.kind) {
             (Color::White, PieceKind::Pawn) => self.white_pawn,
             (Color::White, PieceKind::Knight) => self.white_knight,
@@ -203,7 +203,7 @@ impl BBPosition {
     }
 
     pub fn occupied_cells(&self) -> Bitboard {
-        Bitboard::new(self.into_iter().map(|(_, pos)| pos.bits).sum())
+        Bitboard::new(self.into_iter().fold(0u64, |acc, (_, pos)| acc | pos.bits))
     }
 
     pub fn empty_cells(&self) -> Bitboard {
@@ -214,8 +214,7 @@ impl BBPosition {
         Bitboard::new(
             self.into_iter()
                 .filter(|(piece, _)| piece.color == c)
-                .map(|(_, pos)| pos.bits)
-                .sum(),
+                .fold(0u64, |acc, (_, pos)| acc | pos.bits),
         )
     }
 

@@ -304,12 +304,6 @@ impl Bitboard {
     }
 
     pub fn count_bits(&self) -> i32 {
-        let mut count = 0;
-        let mut counter = self.bits;
-        while counter != 0 {
-            count += 1;
-            counter &= counter - 1;
-        }
-        count
+        self.bits.count_ones() as i32
     }
 }
