@@ -97,10 +97,10 @@ impl Board {
 
     /// calculates how castling rights get changed by the move being made
     fn calculate_castling_rights(&self, player_move: &Move) -> (Castle, Castle) {
-        let white_queen_rook = 56;
-        let white_king_rook = 63;
-        let black_queen_rook = 0;
-        let black_king_rook = 7;
+        let white_queen_rook = 7; // a1
+        let white_king_rook = 0; // h1
+        let black_queen_rook = 63; // a8
+        let black_king_rook = 56; // h8
 
         let white_can_castle = match (player_move.piece.color, player_move.piece.kind) {
             (Color::White, PieceKind::King) => Castle::No,
