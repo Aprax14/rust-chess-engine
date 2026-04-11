@@ -218,6 +218,21 @@ impl BBPosition {
         )
     }
 
+    /// Returns `(ours, enemies)` in a single pass over the 12 bitboards.
+    pub fn occupied_by_both(&self, color: Color) -> (Bitboard, Bitboard) {
+        let (ours, enemies) =
+            self.into_iter()
+                .fold((0u64, 0u64), |(ours, enemies), (piece, bb)| {
+                    if piece.color == color {
+                        (ours | bb.bits, enemies)
+                    } else {
+                        (ours, enemies | bb.bits)
+                    }
+                });
+
+        (Bitboard::new(ours), Bitboard::new(enemies))
+    }
+
     pub fn piece_at(&self, left_shift: u8) -> Option<Piece> {
         for (piece, bitboard) in self.into_iter() {
             if bitboard.bits & (1 << left_shift) != 0 {
@@ -232,8 +247,8 @@ impl BBPosition {
     /// This can be called with a single piece Bitboard (a Bitboard with just one single 1 inside its u64)
     /// or with a multi-pieces Bitboard.
     pub fn captures(&self, piece: Piece, piece_position: Bitboard) -> Bitboard {
-        let occupied = self.occupied_cells();
-        let enemies = self.occupied_by(piece.color.other());
+        let (our_squares, enemies) = self.occupied_by_both(piece.color);
+        let occupied = Bitboard::new(our_squares.bits | enemies.bits);
         match (piece.kind, piece.color) {
             (PieceKind::Pawn, Color::White) => {
                 generators::white_pawn_attack(piece_position, Bitboard::new(0), enemies)
@@ -262,8 +277,7 @@ impl BBPosition {
     ///
     /// Can be called with Bitboards of multiple pieces of a kind.
     pub fn attacks(&self, piece: Piece, piece_position: Bitboard) -> Bitboard {
-        let our_squares = self.occupied_by(piece.color);
-        let enemies = self.occupied_by(piece.color.other());
+        let (our_squares, enemies) = self.occupied_by_both(piece.color);
         match (piece.kind, piece.color) {
             (PieceKind::Pawn, Color::White) => generators::white_pawn_attack(
                 piece_position,
@@ -287,8 +301,7 @@ impl BBPosition {
     ///
     /// Can be called with Bitboards of multiple pieces of a kind.
     pub fn defenses(&self, piece: Piece, piece_position: Bitboard) -> Bitboard {
-        let our_squares = self.occupied_by(piece.color);
-        let enemies = self.occupied_by(piece.color.other());
+        let (our_squares, enemies) = self.occupied_by_both(piece.color);
         let attacked_and_defended = match (piece.kind, piece.color) {
             (PieceKind::Pawn, Color::White) => generators::white_pawn_attack(
                 piece_position,
@@ -321,9 +334,8 @@ impl BBPosition {
     /// Returns all the possible moves for a piece.
     /// Can be called with Bitboards containing more than 1 piece of a kind.
     pub fn available_moves(&self, piece: Piece, piece_position_left_shift: u8) -> Bitboard {
-        let occupied = self.occupied_cells();
-        let our_squares = self.occupied_by(piece.color);
-        let enemies = self.occupied_by(piece.color.other());
+        let (our_squares, enemies) = self.occupied_by_both(piece.color);
+        let occupied = Bitboard::new(our_squares.bits | enemies.bits);
         let piece_position = Bitboard::new(1 << piece_position_left_shift);
 
         match (piece.kind, piece.color) {

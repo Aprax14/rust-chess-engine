@@ -89,6 +89,7 @@ impl Board {
     /// Discards the moves that leaves the moving side king in check (illegal).
     pub fn generate_moves(&self, only_critical: bool) -> Moves {
         let mut moves = Moves::new();
+        let in_check = self.position.is_in_check(self.turn);
 
         for (piece, bitboard) in self.position.into_iter() {
             if piece.color != self.turn {
@@ -134,9 +135,7 @@ impl Board {
                             );
                             moves.push(promotion, eval);
                         }
-                    } else if current_move.is_capture(&self.position)
-                        || self.position.is_in_check(self.turn)
-                    {
+                    } else if current_move.is_capture(&self.position) || in_check {
                         // if i'm there it means the move is a capture or the player is in check.
                         // if the player is in check, the move that reached this part is a move that stops the check
                         // or it would have been discarded from the condition at line 39.
@@ -159,7 +158,7 @@ impl Board {
         }
 
         // generate castling moves only if the player is not in check and only_critical is not required
-        if !self.position.is_in_check(self.turn) && !only_critical {
+        if !in_check && !only_critical {
             let castling_moves = castle::available_castling_moves(
                 self,
                 self.white_can_castle,
