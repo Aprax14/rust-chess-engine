@@ -134,13 +134,13 @@ fn parse_uci_move(board: &Board, uci: &str) -> Option<Move> {
 
 /// Runs the engine search at the given depth and returns the best (Move, score)
 /// pair, or None if there are no legal moves (checkmate / stalemate).
-fn search_at_depth(board: &Board, depth: i32, max_depth: i32) -> Option<(Move, i32)> {
+fn search_at_depth(board: &Board, depth: i32) -> Option<(Move, i32)> {
     let scenario = Scenario::new(board.clone());
     let (tx, rx) = mpsc::channel::<(Move, i32)>();
     let is_white = board.turn == Color::White;
 
     thread::spawn(move || {
-        scenario.parallel_minimax_alpha_beta(depth, max_depth, tx);
+        scenario.parallel_minimax_alpha_beta(depth, tx);
     });
 
     let mut best: Option<(Move, i32)> = None;
@@ -184,7 +184,7 @@ fn iterative_deepening(board: &Board, budget: Duration) -> Option<Move> {
             break;
         }
 
-        match search_at_depth(board, depth, depth + 3) {
+        match search_at_depth(board, depth) {
             Some((m, eval)) => {
                 // Engine uses 1000 per pawn; UCI expects centipawns (100/pawn).
                 let cp = eval / 10;
@@ -289,7 +289,7 @@ fn handle_go(board: &Board, tokens: &[&str]) {
 
     let best_move = if let Some(d) = fixed_depth {
         // Fixed-depth search: run once, no time management.
-        search_at_depth(board, d, d + 3).map(|(m, eval)| {
+        search_at_depth(board, d).map(|(m, eval)| {
             let cp = eval / 10;
             uci_send!("info depth {} score cp {}", d, cp);
             m

@@ -14,15 +14,15 @@ use super::transposition::{Bound, TranspositionTable};
 /// Depth reduction used for null move pruning.
 const NULL_MOVE_R: i32 = 2;
 
+/// How many additional plies the quiescence search explores beyond the main horizon.
+const QUIESCENCE_DEPTH: i32 = 6;
+
 impl Scenario {
-    #[allow(clippy::too_many_arguments)]
     fn minimax_alpha_beta(
         &self,
         depth: i32,
-        max_depth: i32,
         mut alpha: i32,
         mut beta: i32,
-        depth_counter: i32,
         tt: &mut TranspositionTable,
         allow_null_move: bool,
     ) -> i32 {
@@ -55,7 +55,7 @@ impl Scenario {
         }
 
         if depth <= 0 {
-            return self.quiescence_search(alpha, beta, depth_counter, max_depth);
+            return self.quiescence_search(alpha, beta, QUIESCENCE_DEPTH);
         }
 
         // Null move pruning: temporarily pass the turn. If the resulting position
@@ -68,10 +68,8 @@ impl Scenario {
                 let null_scenario = Scenario::new(self.board.make_null_move());
                 let null_eval = null_scenario.minimax_alpha_beta(
                     depth - 1 - NULL_MOVE_R,
-                    max_depth,
                     alpha,
                     beta,
-                    depth_counter + 1,
                     tt,
                     false, // no consecutive null moves
                 );
@@ -101,15 +99,8 @@ impl Scenario {
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.take(i);
                     let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
-                    let inner_eval = next_scenario.minimax_alpha_beta(
-                        depth - 1,
-                        max_depth,
-                        alpha,
-                        beta,
-                        depth_counter + 1,
-                        tt,
-                        true,
-                    );
+                    let inner_eval =
+                        next_scenario.minimax_alpha_beta(depth - 1, alpha, beta, tt, true);
                     if inner_eval > max_eval {
                         max_eval = inner_eval;
                     }
@@ -137,15 +128,8 @@ impl Scenario {
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.take(i);
                     let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
-                    let inner_eval = next_scenario.minimax_alpha_beta(
-                        depth - 1,
-                        max_depth,
-                        alpha,
-                        beta,
-                        depth_counter + 1,
-                        tt,
-                        true,
-                    );
+                    let inner_eval =
+                        next_scenario.minimax_alpha_beta(depth - 1, alpha, beta, tt, true);
 
                     if inner_eval < min_eval {
                         min_eval = inner_eval;
@@ -171,8 +155,7 @@ impl Scenario {
         }
     }
 
-    pub fn parallel_minimax_alpha_beta(&self, depth: i32, max_depth: i32, tx: Sender<(Move, i32)>) {
-        let depth_counter = 0;
+    pub fn parallel_minimax_alpha_beta(&self, depth: i32, tx: Sender<(Move, i32)>) {
         let mut available_moves = self.board.generate_moves(false);
         let len = available_moves.len();
 
@@ -208,10 +191,8 @@ impl Scenario {
 
                     let eval = next_scenario.minimax_alpha_beta(
                         depth - 1,
-                        max_depth,
                         main_alpha.load(Ordering::Acquire),
                         main_beta.load(Ordering::Acquire),
-                        depth_counter + 1,
                         &mut tt,
                         true,
                     );
@@ -254,13 +235,7 @@ impl Scenario {
         drop(tx);
     }
 
-    fn quiescence_search(
-        &self,
-        mut alpha: i32,
-        mut beta: i32,
-        depth_counter: i32,
-        max_depth: i32,
-    ) -> i32 {
+    fn quiescence_search(&self, mut alpha: i32, mut beta: i32, qdepth: i32) -> i32 {
         let static_eval = StaticEval::static_evaluate(&self.board);
         let current_eval = static_eval.white - static_eval.black;
 
@@ -268,7 +243,7 @@ impl Scenario {
             return beta;
         }
 
-        if depth_counter >= max_depth {
+        if qdepth <= 0 {
             return current_eval;
         }
 
@@ -292,8 +267,7 @@ impl Scenario {
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.take(i);
                     let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
-                    let eval =
-                        next_scenario.quiescence_search(alpha, beta, depth_counter + 1, max_depth);
+                    let eval = next_scenario.quiescence_search(alpha, beta, qdepth - 1);
                     if eval >= beta {
                         return beta;
                     }
@@ -307,8 +281,7 @@ impl Scenario {
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.take(i);
                     let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
-                    let eval =
-                        next_scenario.quiescence_search(alpha, beta, depth_counter + 1, max_depth);
+                    let eval = next_scenario.quiescence_search(alpha, beta, qdepth - 1);
                     if eval <= alpha {
                         return alpha;
                     }
