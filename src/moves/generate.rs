@@ -108,8 +108,11 @@ impl Board {
                         },
                     };
 
-                    let next_position = self.position.inner_make_unchecked_move(&current_move);
-                    if next_position.is_in_check(current_move.piece.color) {
+                    if self.position.is_in_check_after_standard_move(
+                        piece_position,
+                        to_square,
+                        *piece,
+                    ) {
                         // the move the player made left the king in check -> not valid
                         continue;
                     }
@@ -179,8 +182,11 @@ impl Board {
         // En passant is always a capture, so generate it in both full and critical mode.
         let ep_moves = en_passant::available_en_passant_moves(self);
         for ep_move in [ep_moves.0, ep_moves.1].into_iter().flatten() {
-            let next_position = self.position.inner_make_unchecked_move(&ep_move);
-            if next_position.is_in_check(ep_move.piece.color) {
+            if let MoveKind::EnPassant { from, to } = ep_move.action
+                && self
+                    .position
+                    .is_in_check_after_en_passant(from, to, ep_move.piece.color)
+            {
                 continue;
             }
             let eval = evaluator::utils::move_score_with_mvv_lva(&ep_move, &self.position);

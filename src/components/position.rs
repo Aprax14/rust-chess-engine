@@ -381,6 +381,124 @@ impl BBPosition {
             != Bitboard::new(0)
     }
 
+    /// Returns true if the moving side's king is in check after a standard (or promotion) move.
+    /// Avoids cloning the full position by doing reverse ray-casting from the king's square.
+    pub fn is_in_check_after_standard_move(&self, from: u8, to: u8, moving_piece: Piece) -> bool {
+        self.is_in_check_after_move_internal(
+            from,
+            to,
+            to,
+            moving_piece.color,
+            moving_piece.kind == PieceKind::King,
+        )
+    }
+
+    /// Returns true if the moving side's king is in check after an en-passant capture.
+    pub fn is_in_check_after_en_passant(&self, from: u8, to: u8, moving_color: Color) -> bool {
+        let captured_sq = match moving_color {
+            Color::White => to - 8,
+            Color::Black => to + 8,
+        };
+        self.is_in_check_after_move_internal(from, to, captured_sq, moving_color, false)
+    }
+
+    fn is_in_check_after_move_internal(
+        &self,
+        from: u8,
+        to: u8,
+        captured_sq: u8,
+        moving_color: Color,
+        king_moved: bool,
+    ) -> bool {
+        let enemy_color = moving_color.other();
+
+        let king_sq = if king_moved {
+            to
+        } else {
+            self.get(Piece::new(moving_color, PieceKind::King))
+                .bits
+                .trailing_zeros() as u8
+        };
+        let king_bb = Bitboard::new(1u64 << king_sq);
+
+        let (our_orig, enemy_orig) = self.occupied_by_both(moving_color);
+
+        // compute the new occupation bitboard after the move
+        let our_new = (our_orig.bits & !(1u64 << from)) | (1u64 << to);
+        let enemy_new = enemy_orig.bits & !(1u64 << captured_sq);
+
+        // All occupied squares except the king.
+        let occ_no_king = Bitboard::new((our_new | enemy_new) & !(1u64 << king_sq));
+
+        // Get diagonal mover (bishop or queen)
+        let enemy_diag = (self.get(Piece::new(enemy_color, PieceKind::Bishop)).bits
+            | self.get(Piece::new(enemy_color, PieceKind::Queen)).bits)
+            & enemy_new;
+        // Check if an enemy diagonal mover hits the king
+        if enemy_diag != 0 {
+            let diag_blockers = Bitboard::new(occ_no_king.bits & !enemy_diag);
+            let enemy_diag_bb = Bitboard::new(enemy_diag);
+            // The idea here is to simulate a king moving like a bishop.
+            // By symmetry, if the ray reaches an enemy bishop/queen it means that
+            // that piece can also reach the king. One cast from the king is enough making this
+            // more efficient that one cast for every enemy bishop and queen.
+            if generators::bishop(king_bb, diag_blockers, enemy_diag_bb).bits & enemy_diag != 0 {
+                return true;
+            }
+        }
+
+        // Orthogonal moving pieces (rook + queen)
+        let enemy_ortho = (self.get(Piece::new(enemy_color, PieceKind::Rook)).bits
+            | self.get(Piece::new(enemy_color, PieceKind::Queen)).bits)
+            & enemy_new;
+        if enemy_ortho != 0 {
+            let ortho_blockers = Bitboard::new(occ_no_king.bits & !enemy_ortho);
+            let enemy_ortho_bb = Bitboard::new(enemy_ortho);
+            if generators::rook(king_bb, ortho_blockers, enemy_ortho_bb).bits & enemy_ortho != 0 {
+                return true;
+            }
+        }
+
+        // Knights
+        let enemy_knights = self.get(Piece::new(enemy_color, PieceKind::Knight)).bits & enemy_new;
+        if enemy_knights != 0
+            && generators::knight(king_bb, Bitboard::new(0), Bitboard::new(0)).bits & enemy_knights
+                != 0
+        {
+            return true;
+        }
+
+        // Pawns
+        let enemy_pawns = self.get(Piece::new(enemy_color, PieceKind::Pawn)).bits & enemy_new;
+        if enemy_pawns != 0 {
+            // Cast from king's square as if it were a pawn of the moving color.
+            // The attacked squares are exactly the squares from which an enemy pawn would attack the king.
+            let pawn_threats = match moving_color {
+                Color::White => generators::white_pawn_attack(
+                    king_bb,
+                    Bitboard::new(0),
+                    Bitboard::new(u64::MAX),
+                ),
+                Color::Black => generators::black_pawn_attack(
+                    king_bb,
+                    Bitboard::new(0),
+                    Bitboard::new(u64::MAX),
+                ),
+            };
+            if pawn_threats.bits & enemy_pawns != 0 {
+                return true;
+            }
+        }
+
+        // Enemy king (two kings can not be adjacent)
+        let enemy_king = self.get(Piece::new(enemy_color, PieceKind::King)).bits;
+        if generators::king(king_bb, Bitboard::new(0), Bitboard::new(0)).bits & enemy_king != 0 {
+            return true;
+        }
+
+        false
+    }
+
     /// Updates the position after a move is made. This should not be called manually cause
     /// it does not updates all the other fields of a chess board
     pub fn inner_make_unchecked_move(&self, player_move: &Move) -> Self {
