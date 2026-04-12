@@ -15,7 +15,7 @@ use super::transposition::{Bound, TranspositionTable};
 const NULL_MOVE_R: i32 = 2;
 
 /// How many additional plies the quiescence search explores beyond the main horizon.
-const QUIESCENCE_DEPTH: i32 = 6;
+const QUIESCENCE_DEPTH: i32 = 4;
 
 impl Scenario {
     fn minimax_alpha_beta(
@@ -245,27 +245,42 @@ impl Scenario {
         let static_eval = StaticEval::static_evaluate(&self.board);
         let current_eval = static_eval.white - static_eval.black;
 
-        if current_eval >= beta {
-            return beta;
+        match self.board.turn {
+            Color::White => {
+                if current_eval >= beta {
+                    return beta;
+                }
+                if current_eval > alpha {
+                    alpha = current_eval;
+                }
+            }
+            Color::Black => {
+                if current_eval <= alpha {
+                    return alpha;
+                }
+                if current_eval < beta {
+                    beta = current_eval;
+                }
+            }
         }
 
         if qdepth <= 0 {
             return current_eval;
         }
 
-        if current_eval > alpha {
-            alpha = current_eval;
-        }
-
         let mut available_moves = self.board.generate_moves(true);
-        // At this point generate_moves should have already discarded the moves that left the king in check
         if available_moves.is_empty() {
-            if self.board.position.is_in_check(Color::White) {
-                return i32::MIN;
-            } else if self.board.position.is_in_check(Color::Black) {
-                return i32::MAX;
+            if self.board.position.is_in_check(self.board.turn) {
+                return match self.board.turn {
+                    Color::White => i32::MIN,
+                    Color::Black => i32::MAX,
+                };
             }
-            return 0;
+            // No captures available and not in check: return the standing pat score.
+            return match self.board.turn {
+                Color::White => alpha,
+                Color::Black => beta,
+            };
         }
 
         match self.board.turn {
