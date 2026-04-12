@@ -56,10 +56,12 @@ fn uci_to_sq(s: &str) -> Option<u8> {
 /// Converts a Move to its UCI string (e.g. "e2e4", "e7e8q", "e1g1").
 fn move_to_uci(m: &Move) -> String {
     match &m.action {
-        MoveKind::Standard { from, to } | MoveKind::EnPassant { from, to } => {
+        MoveKind::Standard { from, to, .. } | MoveKind::EnPassant { from, to } => {
             format!("{}{}", sq_to_uci(*from), sq_to_uci(*to))
         }
-        MoveKind::Promote { from, to, to_piece } => {
+        MoveKind::Promote {
+            from, to, to_piece, ..
+        } => {
             let promo = match to_piece {
                 PieceKind::Queen => 'q',
                 PieceKind::Rook => 'r',
@@ -112,12 +114,15 @@ fn parse_uci_move(board: &Board, uci: &str) -> Option<Move> {
         .find(|rm| {
             let m = &rm.piece_move;
             match &m.action {
-                MoveKind::Standard { from: f, to: t } => *f == from && *t == to && promo.is_none(),
+                MoveKind::Standard { from: f, to: t, .. } => {
+                    *f == from && *t == to && promo.is_none()
+                }
                 MoveKind::EnPassant { from: f, to: t } => *f == from && *t == to,
                 MoveKind::Promote {
                     from: f,
                     to: t,
                     to_piece,
+                    ..
                 } => *f == from && *t == to && promo.is_none_or(|p| p == *to_piece),
                 MoveKind::Castle(side) => {
                     let (cf, ct) = castle_squares(m.piece.color, side);

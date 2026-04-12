@@ -23,7 +23,11 @@ impl Default for RatedMove {
         Self {
             piece_move: Move {
                 piece: 'K'.try_into().expect("hardcoded piece should not fail"),
-                action: MoveKind::Standard { from: 0, to: 0 },
+                action: MoveKind::Standard {
+                    from: 0,
+                    to: 0,
+                    captured: None,
+                },
             },
             rating: i32::MIN,
         }
@@ -91,6 +95,7 @@ impl Board {
         let mut moves = Moves::new();
         let in_check = self.position.is_in_check(self.turn);
 
+        let enemy_squares = self.position.occupied_by(self.turn.other()).bits;
         for (piece, bitboard) in self.position.into_iter() {
             if piece.color != self.turn {
                 continue;
@@ -100,11 +105,17 @@ impl Board {
                 let available_moves = self.position.available_moves(*piece, piece_position);
 
                 for to_square in available_moves.single_squares() {
+                    let captured = if (1u64 << to_square) & enemy_squares != 0 {
+                        self.position.piece_at(to_square)
+                    } else {
+                        None
+                    };
                     let current_move = Move {
                         piece: *piece,
                         action: MoveKind::Standard {
                             from: piece_position,
                             to: to_square,
+                            captured,
                         },
                     };
 
@@ -130,6 +141,7 @@ impl Board {
                                     from: piece_position,
                                     to: to_square,
                                     to_piece: piece_kind,
+                                    captured,
                                 },
                             };
                             let eval = evaluator::utils::move_score_with_mvv_lva(
@@ -138,7 +150,7 @@ impl Board {
                             );
                             moves.push(promotion, eval);
                         }
-                    } else if current_move.is_capture(&self.position) || in_check {
+                    } else if current_move.is_capture() || in_check {
                         // if i'm there it means the move is a capture or the player is in check.
                         // if the player is in check, the move that reached this part is a move that stops the check
                         // or it would have been discarded from the condition at line 39.

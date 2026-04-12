@@ -3,7 +3,6 @@ use crate::components::{
     castle::CastleSide,
     constants,
     pieces::{Piece, PieceKind},
-    position::BBPosition,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
@@ -11,12 +10,14 @@ pub enum MoveKind {
     Standard {
         from: u8,
         to: u8,
+        captured: Option<Piece>,
     },
     Castle(CastleSide),
     Promote {
         from: u8,
         to: u8,
         to_piece: PieceKind,
+        captured: Option<Piece>,
     },
     /// En passant capture: the capturing pawn moves from `from` to `to`,
     /// and the captured pawn (sitting one rank behind `to`) is removed.
@@ -35,30 +36,23 @@ pub struct Move {
 impl Move {
     pub fn is_promotion(&self) -> bool {
         match self.action {
-            MoveKind::Standard { from: _, to } => {
+            MoveKind::Standard { to, .. } => {
                 self.piece.kind == PieceKind::Pawn
                     && ((1 << to) & constants::EIGHT_ROW != 0
                         || (1 << to) & constants::FIRST_ROW != 0)
             }
             MoveKind::Castle(_) | MoveKind::EnPassant { .. } => false,
-            MoveKind::Promote {
-                from: _,
-                to: _,
-                to_piece: _,
-            } => true,
+            MoveKind::Promote { .. } => true,
         }
     }
 
-    pub fn is_capture(&self, position: &BBPosition) -> bool {
+    pub fn is_capture(&self) -> bool {
         match self.action {
             MoveKind::Castle(_) => false,
             MoveKind::EnPassant { .. } => true,
-            MoveKind::Standard { from: _, to }
-            | MoveKind::Promote {
-                from: _,
-                to,
-                to_piece: _,
-            } => position.occupied_by(self.piece.color.other()).bits & (1 << to) != 0,
+            MoveKind::Standard { captured, .. } | MoveKind::Promote { captured, .. } => {
+                captured.is_some()
+            }
         }
     }
 }

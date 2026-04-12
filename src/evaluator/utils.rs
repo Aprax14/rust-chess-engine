@@ -12,30 +12,36 @@ pub fn attacked_squares_score(
     piece: Piece,
     position: Bitboard,
 ) -> i32 {
-    board_position
-        .attacks(piece, position)
-        .single_squares()
-        .map(|shift| {
-            if let Some(p) = board_position.piece_at(shift) {
-                p.kind.attacked_value()
-            } else {
-                constants::ATTACKED_EMPTY_SQUARE_VALUE
-            }
-        })
-        .sum()
+    let attacks = board_position.attacks(piece, position).bits;
+    if attacks == 0 {
+        return 0;
+    }
+
+    // Attribute empty-square value to all attacked squares, then adjust for occupied ones.
+    // This iterates the 12 bitboards exactly once instead of once per attacked square.
+    let mut score = attacks.count_ones() as i32 * constants::ATTACKED_EMPTY_SQUARE_VALUE;
+    for (p, bb) in board_position.into_iter() {
+        let overlap = attacks & bb.bits;
+        if overlap != 0 {
+            score += overlap.count_ones() as i32
+                * (p.kind.attacked_value() - constants::ATTACKED_EMPTY_SQUARE_VALUE);
+        }
+    }
+
+    score
 }
 
 fn inner_move_score_no_captures(m: &Move, board_position: &BBPosition) -> i32 {
     match m.action {
         MoveKind::Castle(_) => constants::CASTLING_VALUE,
-        MoveKind::EnPassant { from: _, to } => {
+        MoveKind::EnPassant { to, .. } => {
             if board_position.square_is_defended_by(to, m.piece.color.other()) {
                 0
             } else {
                 PieceKind::Pawn.value()
             }
         }
-        MoveKind::Standard { from, to } => {
+        MoveKind::Standard { from, to, .. } => {
             let attacked_before =
                 attacked_squares_score(board_position, m.piece, Bitboard::new(1 << from));
             let attacked_after =
@@ -44,11 +50,7 @@ fn inner_move_score_no_captures(m: &Move, board_position: &BBPosition) -> i32 {
             // > 0 it means the position is improving. < 0 the piece is going in a worse position
             attacked_after - attacked_before
         }
-        MoveKind::Promote {
-            from: _,
-            to: _,
-            to_piece: _,
-        } => constants::PROMOTION_VALUE,
+        MoveKind::Promote { .. } => constants::PROMOTION_VALUE,
     }
 }
 
@@ -57,22 +59,19 @@ pub fn move_score_with_mvv_lva(m: &Move, board_position: &BBPosition) -> i32 {
         MoveKind::Castle(_) => constants::CASTLING_VALUE,
         // En passant always captures a pawn of equal value (pawn for pawn).
         // The target square is empty, but it can still be defended by another piece.
-        MoveKind::EnPassant { from: _, to } => {
+        MoveKind::EnPassant { to, .. } => {
             if board_position.square_is_defended_by(to, m.piece.color.other()) {
                 0
             } else {
                 PieceKind::Pawn.value()
             }
         }
-        MoveKind::Standard { from, to } => {
-            let Some(victim) = board_position.piece_at(to) else {
+        MoveKind::Standard { to, captured, .. } => {
+            let Some(victim) = captured else {
                 return inner_move_score_no_captures(m, board_position);
             };
-            let attacker = board_position
-                .piece_at(from)
-                .expect("from square should contain a piece");
 
-            let mut capture_value = victim.kind.value() - attacker.kind.value();
+            let mut capture_value = victim.kind.value() - m.piece.kind.value();
             if board_position.square_is_defended_by(to, victim.color) {
                 if capture_value < 0 {
                     // we are capturing a defended less valuable piece with a more valuable piece
@@ -86,11 +85,16 @@ pub fn move_score_with_mvv_lva(m: &Move, board_position: &BBPosition) -> i32 {
 
             capture_value
         }
-        MoveKind::Promote { from, to, to_piece } => {
+        MoveKind::Promote {
+            from,
+            to,
+            to_piece,
+            captured,
+        } => {
             let standard_eval = move_score_with_mvv_lva(
                 &Move {
                     piece: m.piece,
-                    action: MoveKind::Standard { from, to },
+                    action: MoveKind::Standard { from, to, captured },
                 },
                 board_position,
             );

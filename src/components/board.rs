@@ -7,14 +7,13 @@ use crate::moves::move_type::{Move, MoveKind};
 use super::{
     castle::{Castle, CastleSide},
     constants, hash,
-    pieces::{Bitboard, Color, Piece, PieceKind},
+    pieces::{Bitboard, Color, PieceKind},
     position::BBPosition,
 };
 
 /// Saved board state needed to reverse a move with [`Board::unmake_move`].
 #[derive(Clone, Copy)]
 pub struct MoveUndo {
-    pub captured_piece: Option<Piece>,
     pub white_can_castle: Castle,
     pub black_can_castle: Castle,
     pub en_passant_target: Bitboard,
@@ -139,21 +138,21 @@ impl Board {
             (Color::White, PieceKind::King) => Castle::No,
             (Color::White, PieceKind::Rook) => match (self.white_can_castle, player_move.action) {
                 (Castle::No, _) => Castle::No,
-                (Castle::King, MoveKind::Standard { from, to: _ }) => {
+                (Castle::King, MoveKind::Standard { from, .. }) => {
                     if from == white_king_rook {
                         Castle::No
                     } else {
                         Castle::King
                     }
                 }
-                (Castle::Queen, MoveKind::Standard { from, to: _ }) => {
+                (Castle::Queen, MoveKind::Standard { from, .. }) => {
                     if from == white_queen_rook {
                         Castle::No
                     } else {
                         Castle::Queen
                     }
                 }
-                (Castle::Both, MoveKind::Standard { from, to: _ }) => {
+                (Castle::Both, MoveKind::Standard { from, .. }) => {
                     if from == white_king_rook {
                         Castle::Queen
                     } else if from == white_queen_rook {
@@ -166,45 +165,21 @@ impl Board {
             },
             (Color::Black, _) => match (self.white_can_castle, player_move.action) {
                 (Castle::No, _) => Castle::No,
-                (
-                    Castle::King,
-                    MoveKind::Standard { from: _, to }
-                    | MoveKind::Promote {
-                        from: _,
-                        to,
-                        to_piece: _,
-                    },
-                ) => {
+                (Castle::King, MoveKind::Standard { to, .. } | MoveKind::Promote { to, .. }) => {
                     if to == white_king_rook {
                         Castle::No
                     } else {
                         Castle::King
                     }
                 }
-                (
-                    Castle::Queen,
-                    MoveKind::Standard { from: _, to }
-                    | MoveKind::Promote {
-                        from: _,
-                        to,
-                        to_piece: _,
-                    },
-                ) => {
+                (Castle::Queen, MoveKind::Standard { to, .. } | MoveKind::Promote { to, .. }) => {
                     if to == white_queen_rook {
                         Castle::No
                     } else {
                         Castle::Queen
                     }
                 }
-                (
-                    Castle::Both,
-                    MoveKind::Standard { from: _, to }
-                    | MoveKind::Promote {
-                        from: _,
-                        to,
-                        to_piece: _,
-                    },
-                ) => {
+                (Castle::Both, MoveKind::Standard { to, .. } | MoveKind::Promote { to, .. }) => {
                     if to == white_king_rook {
                         Castle::Queen
                     } else if to == white_queen_rook {
@@ -222,21 +197,21 @@ impl Board {
             (Color::Black, PieceKind::King) => Castle::No,
             (Color::Black, PieceKind::Rook) => match (self.black_can_castle, player_move.action) {
                 (Castle::No, _) => Castle::No,
-                (Castle::King, MoveKind::Standard { from, to: _ }) => {
+                (Castle::King, MoveKind::Standard { from, .. }) => {
                     if from == black_king_rook {
                         Castle::No
                     } else {
                         Castle::King
                     }
                 }
-                (Castle::Queen, MoveKind::Standard { from, to: _ }) => {
+                (Castle::Queen, MoveKind::Standard { from, .. }) => {
                     if from == black_queen_rook {
                         Castle::No
                     } else {
                         Castle::Queen
                     }
                 }
-                (Castle::Both, MoveKind::Standard { from, to: _ }) => {
+                (Castle::Both, MoveKind::Standard { from, .. }) => {
                     if from == black_king_rook {
                         Castle::Queen
                     } else if from == black_queen_rook {
@@ -249,45 +224,21 @@ impl Board {
             },
             (Color::White, _) => match (self.black_can_castle, player_move.action) {
                 (Castle::No, _) => Castle::No,
-                (
-                    Castle::King,
-                    MoveKind::Standard { from: _, to }
-                    | MoveKind::Promote {
-                        from: _,
-                        to,
-                        to_piece: _,
-                    },
-                ) => {
+                (Castle::King, MoveKind::Standard { to, .. } | MoveKind::Promote { to, .. }) => {
                     if to == black_king_rook {
                         Castle::No
                     } else {
                         Castle::King
                     }
                 }
-                (
-                    Castle::Queen,
-                    MoveKind::Standard { from: _, to }
-                    | MoveKind::Promote {
-                        from: _,
-                        to,
-                        to_piece: _,
-                    },
-                ) => {
+                (Castle::Queen, MoveKind::Standard { to, .. } | MoveKind::Promote { to, .. }) => {
                     if to == black_queen_rook {
                         Castle::No
                     } else {
                         Castle::Queen
                     }
                 }
-                (
-                    Castle::Both,
-                    MoveKind::Standard { from: _, to }
-                    | MoveKind::Promote {
-                        from: _,
-                        to,
-                        to_piece: _,
-                    },
-                ) => {
+                (Castle::Both, MoveKind::Standard { to, .. } | MoveKind::Promote { to, .. }) => {
                     if to == black_king_rook {
                         Castle::Queen
                     } else if to == black_queen_rook {
@@ -308,8 +259,9 @@ impl Board {
     pub fn reset_50_moves(&self, player_move: &Move) -> bool {
         match player_move.action {
             MoveKind::EnPassant { .. } => true,
-            MoveKind::Standard { from: _, to } => {
+            MoveKind::Standard { to, captured, .. } => {
                 player_move.piece.kind == PieceKind::Pawn
+                    || captured.is_some()
                     || ((1 << to) & self.position.occupied_cells().bits != 0)
             }
             _ => false,
@@ -366,7 +318,6 @@ impl Board {
             self.reps_50 + 1
         };
         let moves_count = self.moves_count + 1;
-
         let hash = self.incremental_hash(player_move, white_can_castle, black_can_castle);
 
         Board {
@@ -400,10 +351,10 @@ impl Board {
         h ^= hash::castle_rights_hash(new_white_castle, new_black_castle);
 
         match player_move.action {
-            MoveKind::Standard { from, to } => {
+            MoveKind::Standard { from, to, captured } => {
                 h ^= hash::piece_square_hash(player_move.piece.color, player_move.piece.kind, from);
-                if let Some(captured) = self.position.piece_at(to) {
-                    h ^= hash::piece_square_hash(captured.color, captured.kind, to);
+                if let Some(cap) = captured {
+                    h ^= hash::piece_square_hash(cap.color, cap.kind, to);
                 }
                 h ^= hash::piece_square_hash(player_move.piece.color, player_move.piece.kind, to);
             }
@@ -429,10 +380,15 @@ impl Board {
                     captured_sq,
                 );
             }
-            MoveKind::Promote { from, to, to_piece } => {
+            MoveKind::Promote {
+                from,
+                to,
+                to_piece,
+                captured,
+            } => {
                 h ^= hash::piece_square_hash(player_move.piece.color, PieceKind::Pawn, from);
-                if let Some(captured) = self.position.piece_at(to) {
-                    h ^= hash::piece_square_hash(captured.color, captured.kind, to);
+                if let Some(cap) = captured {
+                    h ^= hash::piece_square_hash(cap.color, cap.kind, to);
                 }
                 h ^= hash::piece_square_hash(player_move.piece.color, to_piece, to);
             }
@@ -454,12 +410,6 @@ impl Board {
     /// Applies a move to the board in place and returns the undo information needed to reverse it.
     pub fn make_move(&mut self, player_move: &Move) -> MoveUndo {
         // Compute everything that depends on the current (pre-move) state before mutating.
-        let captured_piece = match player_move.action {
-            MoveKind::Standard { to, .. } | MoveKind::Promote { to, .. } => {
-                self.position.piece_at(to)
-            }
-            _ => None,
-        };
         let (new_white_castle, new_black_castle) = self.calculate_castling_rights(player_move);
         let new_en_passant = self.position.calculate_en_passant_target(player_move);
         let new_hash = self.incremental_hash(player_move, new_white_castle, new_black_castle);
@@ -470,7 +420,6 @@ impl Board {
         };
 
         let undo = MoveUndo {
-            captured_piece,
             white_can_castle: self.white_can_castle,
             black_can_castle: self.black_can_castle,
             en_passant_target: self.en_passant_target,
@@ -492,7 +441,7 @@ impl Board {
 
     /// Reverses a move previously applied with [`Board::make_move`], restoring all board state.
     pub fn unmake_move(&mut self, player_move: &Move, undo: MoveUndo) {
-        self.position.unapply_move(player_move, undo.captured_piece);
+        self.position.unapply_move(player_move);
         self.turn = self.turn.other();
         self.white_can_castle = undo.white_can_castle;
         self.black_can_castle = undo.black_can_castle;

@@ -73,7 +73,7 @@ impl PieceKind {
 }
 
 // make it Copy cause a reference to Piece (usize) is 64 bits while Piece itself is 16 bits.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Piece {
     pub color: Color,
     pub kind: PieceKind,
@@ -162,7 +162,6 @@ impl TryFrom<char> for Piece {
 }
 
 /// Produces the offset i need to right shift 1 to obtain the bitboard.
-/// I'm doing this to try to get some speed instead of storing an u64
 pub struct SingleSquareIterator {
     bits: u64,
 }
