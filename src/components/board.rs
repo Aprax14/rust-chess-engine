@@ -7,9 +7,27 @@ use crate::moves::move_type::{Move, MoveKind};
 use super::{
     castle::{Castle, CastleSide},
     constants, hash,
-    pieces::{Bitboard, Color, PieceKind},
+    pieces::{Bitboard, Color, Piece, PieceKind},
     position::BBPosition,
 };
+
+/// Saved board state needed to reverse a move with [`Board::unmake_move`].
+#[derive(Clone, Copy)]
+pub struct MoveUndo {
+    pub captured_piece: Option<Piece>,
+    pub white_can_castle: Castle,
+    pub black_can_castle: Castle,
+    pub en_passant_target: Bitboard,
+    pub hash: u64,
+    pub reps_50: u8,
+}
+
+/// Saved state needed to reverse a null move with [`Board::unmake_null_move`].
+pub struct NullMoveUndo {
+    en_passant_target: Bitboard,
+    hash: u64,
+    reps_50: u8,
+}
 
 #[derive(Debug, Clone)]
 pub struct Board {
@@ -332,24 +350,6 @@ impl Board {
         }
     }
 
-    /// Passes the turn to the opponent without moving any piece.
-    ///
-    /// Only valid when the current player is not in check. Used internally by the
-    /// search algorithm for null move pruning - never played in an actual game.
-    pub fn make_null_move(&self) -> Self {
-        Board {
-            position: self.position.clone(),
-            turn: self.turn.other(),
-            en_passant_target: Bitboard::new(0),
-            white_can_castle: self.white_can_castle,
-            black_can_castle: self.black_can_castle,
-            // No piece changes, castling rights unchanged, only side-to-move flips.
-            hash: self.hash ^ hash::side_to_move_hash(),
-            reps_50: self.reps_50 + 1,
-            moves_count: self.moves_count + 1,
-        }
-    }
-
     /// Makes a move and updates position, turn, en passant target, castling rights and moves count.
     ///
     /// Does not prevent you to make an illegal move.
@@ -449,5 +449,81 @@ impl Board {
             (Color::Black, CastleSide::King) => (59, 57, 56, 58), // e8→g8, h8→f8
             (Color::Black, CastleSide::Queen) => (59, 61, 63, 60), // e8→c8, a8→d8
         }
+    }
+
+    /// Applies a move to the board in place and returns the undo information needed to reverse it.
+    pub fn make_move(&mut self, player_move: &Move) -> MoveUndo {
+        // Compute everything that depends on the current (pre-move) state before mutating.
+        let captured_piece = match player_move.action {
+            MoveKind::Standard { to, .. } | MoveKind::Promote { to, .. } => {
+                self.position.piece_at(to)
+            }
+            _ => None,
+        };
+        let (new_white_castle, new_black_castle) = self.calculate_castling_rights(player_move);
+        let new_en_passant = self.position.calculate_en_passant_target(player_move);
+        let new_hash = self.incremental_hash(player_move, new_white_castle, new_black_castle);
+        let new_reps_50 = if self.reset_50_moves(player_move) {
+            0
+        } else {
+            self.reps_50 + 1
+        };
+
+        let undo = MoveUndo {
+            captured_piece,
+            white_can_castle: self.white_can_castle,
+            black_can_castle: self.black_can_castle,
+            en_passant_target: self.en_passant_target,
+            hash: self.hash,
+            reps_50: self.reps_50,
+        };
+
+        self.position.apply_move(player_move);
+        self.turn = self.turn.other();
+        self.en_passant_target = new_en_passant;
+        self.white_can_castle = new_white_castle;
+        self.black_can_castle = new_black_castle;
+        self.hash = new_hash;
+        self.reps_50 = new_reps_50;
+        self.moves_count += 1;
+
+        undo
+    }
+
+    /// Reverses a move previously applied with [`Board::make_move`], restoring all board state.
+    pub fn unmake_move(&mut self, player_move: &Move, undo: MoveUndo) {
+        self.position.unapply_move(player_move, undo.captured_piece);
+        self.turn = self.turn.other();
+        self.white_can_castle = undo.white_can_castle;
+        self.black_can_castle = undo.black_can_castle;
+        self.en_passant_target = undo.en_passant_target;
+        self.hash = undo.hash;
+        self.reps_50 = undo.reps_50;
+        self.moves_count -= 1;
+    }
+
+    /// Applies a null move (pass the turn) in place and returns undo information.
+    pub fn make_null_move_mut(&mut self) -> NullMoveUndo {
+        let undo = NullMoveUndo {
+            en_passant_target: self.en_passant_target,
+            hash: self.hash,
+            reps_50: self.reps_50,
+        };
+        self.turn = self.turn.other();
+        self.en_passant_target = Bitboard::new(0);
+        self.hash ^= hash::side_to_move_hash();
+        self.reps_50 += 1;
+        self.moves_count += 1;
+
+        undo
+    }
+
+    /// Reverses a null move previously applied with [`Board::make_null_move_mut`].
+    pub fn unmake_null_move(&mut self, undo: NullMoveUndo) {
+        self.turn = self.turn.other();
+        self.en_passant_target = undo.en_passant_target;
+        self.hash = undo.hash;
+        self.reps_50 = undo.reps_50;
+        self.moves_count -= 1;
     }
 }

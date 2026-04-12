@@ -53,37 +53,52 @@ pub fn available_en_passant_moves(board: &Board) -> (Option<Move>, Option<Move>)
     result
 }
 
+fn en_passant_captured_sq(to: u8, turn: Color) -> u64 {
+    match turn {
+        Color::White => (1u64 << to) >> 8,
+        Color::Black => (1u64 << to) << 8,
+    }
+}
+
+/// Applies an en-passant capture in place.
+pub fn apply_en_passant_in_place(bitboards: &mut BBPosition, player_move: &Move) {
+    let MoveKind::EnPassant { from, to } = player_move.action else {
+        panic!("Fatal Error: apply_en_passant_in_place called with non-EnPassant move");
+    };
+    let turn = player_move.piece.color;
+    let captured_sq = en_passant_captured_sq(to, turn);
+
+    let pawn_bb = bitboards.get_mut(player_move.piece);
+    pawn_bb.bits = (pawn_bb.bits & !(1u64 << from)) | (1u64 << to);
+
+    let enemy_pawn = Piece::new(turn.other(), PieceKind::Pawn);
+    bitboards.get_mut(enemy_pawn).bits &= !captured_sq;
+}
+
+/// Reverses an en-passant capture in place.
+pub fn unapply_en_passant_in_place(bitboards: &mut BBPosition, player_move: &Move) {
+    let MoveKind::EnPassant { from, to } = player_move.action else {
+        unreachable!("unapply_en_passant_in_place called with non-EnPassant move");
+    };
+    let turn = player_move.piece.color;
+    let captured_sq = en_passant_captured_sq(to, turn);
+
+    // Move pawn back.
+    let pawn_bb = bitboards.get_mut(player_move.piece);
+    pawn_bb.bits = (pawn_bb.bits & !(1u64 << to)) | (1u64 << from);
+
+    // Restore captured pawn.
+    let enemy_pawn = Piece::new(turn.other(), PieceKind::Pawn);
+    bitboards.get_mut(enemy_pawn).bits |= captured_sq;
+}
+
 /// Returns the updated position after an en passant capture.
-/// The capturing pawn moves to the target square and the captured pawn
-/// is removed from the board.
 pub fn bitboards_after_en_passant(
     current_bitboards: &BBPosition,
     player_move: &Move,
 ) -> BBPosition {
-    let MoveKind::EnPassant { from, to } = player_move.action else {
-        unreachable!("bitboards_after_en_passant called with non-EnPassant move");
-    };
-
-    let from_bb = Bitboard::new(1 << from);
-    let to_bb = Bitboard::new(1 << to);
-    let turn = player_move.piece.color;
-
-    // The captured pawn sits one rank behind the en passant target square.
-    let captured_sq = match turn {
-        Color::White => to_bb.bits >> 8,
-        Color::Black => to_bb.bits << 8,
-    };
-
     let mut new_bitboards = current_bitboards.clone();
-
-    // Move the capturing pawn.
-    let pawn_bb = new_bitboards.get_mut(player_move.piece);
-    pawn_bb.bits &= !from_bb.bits;
-    pawn_bb.bits |= to_bb.bits;
-
-    // Remove the captured pawn.
-    let enemy_pawn = Piece::new(turn.other(), PieceKind::Pawn);
-    new_bitboards.get_mut(enemy_pawn).bits &= !captured_sq;
+    apply_en_passant_in_place(&mut new_bitboards, player_move);
 
     new_bitboards
 }

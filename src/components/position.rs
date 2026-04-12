@@ -499,6 +499,69 @@ impl BBPosition {
         false
     }
 
+    /// Applies a move to the position in place.
+    /// Only modifies piece bitboards; all other Board fields must be updated separately.
+    pub fn apply_move(&mut self, player_move: &Move) {
+        match player_move.action {
+            MoveKind::Standard { from, to } => {
+                let from_bb = 1u64 << from;
+                let to_bb = 1u64 << to;
+                if let Some(cap) = self.piece_at(to) {
+                    self.get_mut(cap).bits &= !to_bb;
+                }
+                let piece_bb = self.get_mut(player_move.piece);
+                piece_bb.bits = (piece_bb.bits & !from_bb) | to_bb;
+            }
+            MoveKind::Castle(side) => {
+                castle::apply_castling_in_place(self, player_move.piece.color, side);
+            }
+            MoveKind::EnPassant { .. } => {
+                en_passant::apply_en_passant_in_place(self, player_move);
+            }
+            MoveKind::Promote { from, to, to_piece } => {
+                let from_bb = 1u64 << from;
+                let to_bb = 1u64 << to;
+                if let Some(cap) = self.piece_at(to) {
+                    self.get_mut(cap).bits &= !to_bb;
+                }
+                self.get_mut(player_move.piece).bits &= !from_bb;
+                self.get_mut(Piece::new(player_move.piece.color, to_piece))
+                    .bits |= to_bb;
+            }
+        }
+    }
+
+    /// Reverses a previously applied move, restoring the captured piece if any.
+    pub fn unapply_move(&mut self, player_move: &Move, captured: Option<Piece>) {
+        match player_move.action {
+            MoveKind::Standard { from, to } => {
+                let from_bb = 1u64 << from;
+                let to_bb = 1u64 << to;
+                let piece_bb = self.get_mut(player_move.piece);
+                piece_bb.bits = (piece_bb.bits & !to_bb) | from_bb;
+                if let Some(cap) = captured {
+                    self.get_mut(cap).bits |= to_bb;
+                }
+            }
+            MoveKind::Castle(side) => {
+                castle::unapply_castling_in_place(self, player_move.piece.color, side);
+            }
+            MoveKind::EnPassant { .. } => {
+                en_passant::unapply_en_passant_in_place(self, player_move);
+            }
+            MoveKind::Promote { from, to, to_piece } => {
+                let from_bb = 1u64 << from;
+                let to_bb = 1u64 << to;
+                self.get_mut(Piece::new(player_move.piece.color, to_piece))
+                    .bits &= !to_bb;
+                self.get_mut(player_move.piece).bits |= from_bb;
+                if let Some(cap) = captured {
+                    self.get_mut(cap).bits |= to_bb;
+                }
+            }
+        }
+    }
+
     /// Updates the position after a move is made. This should not be called manually cause
     /// it does not updates all the other fields of a chess board
     pub fn inner_make_unchecked_move(&self, player_move: &Move) -> Self {

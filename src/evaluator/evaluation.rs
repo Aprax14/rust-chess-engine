@@ -19,7 +19,7 @@ const QUIESCENCE_DEPTH: i32 = 6;
 
 impl Scenario {
     fn minimax_alpha_beta(
-        &self,
+        &mut self,
         depth: i32,
         mut alpha: i32,
         mut beta: i32,
@@ -65,14 +65,15 @@ impl Scenario {
             let in_check = self.board.position.is_in_check(self.board.turn);
 
             if !in_check && self.board.has_non_pawn_pieces() {
-                let null_scenario = Scenario::new(self.board.make_null_move());
-                let null_eval = null_scenario.minimax_alpha_beta(
+                let null_undo = self.board.make_null_move_mut();
+                let null_eval = self.minimax_alpha_beta(
                     depth - 1 - NULL_MOVE_R,
                     alpha,
                     beta,
                     tt,
                     false, // no consecutive null moves
                 );
+                self.board.unmake_null_move(null_undo);
 
                 match self.board.turn {
                     Color::White => {
@@ -98,9 +99,10 @@ impl Scenario {
 
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.take(i);
-                    let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
-                    let inner_eval =
-                        next_scenario.minimax_alpha_beta(depth - 1, alpha, beta, tt, true);
+                    let undo = self.board.make_move(&player_move);
+                    let inner_eval = self.minimax_alpha_beta(depth - 1, alpha, beta, tt, true);
+                    self.board.unmake_move(&player_move, undo);
+
                     if inner_eval > max_eval {
                         max_eval = inner_eval;
                     }
@@ -127,9 +129,9 @@ impl Scenario {
 
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.take(i);
-                    let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
-                    let inner_eval =
-                        next_scenario.minimax_alpha_beta(depth - 1, alpha, beta, tt, true);
+                    let undo = self.board.make_move(&player_move);
+                    let inner_eval = self.minimax_alpha_beta(depth - 1, alpha, beta, tt, true);
+                    self.board.unmake_move(&player_move, undo);
 
                     if inner_eval < min_eval {
                         min_eval = inner_eval;
@@ -182,14 +184,18 @@ impl Scenario {
                     // no locking is needed between threads.
                     let mut tt = TranspositionTable::new();
 
-                    let next_scenario = Scenario::new(self.board.make_unchecked_move(player_move));
                     let turn = self.board.turn;
 
                     if stop_signal.load(Ordering::Acquire) {
                         return;
                     }
 
-                    let eval = next_scenario.minimax_alpha_beta(
+                    // Clone the board once per for thread isolation.
+                    // All deeper recursive calls use make/unmake - no further clones.
+                    let mut scenario = Scenario::new(self.board.clone());
+                    let _undo = scenario.board.make_move(player_move);
+
+                    let eval = scenario.minimax_alpha_beta(
                         depth - 1,
                         main_alpha.load(Ordering::Acquire),
                         main_beta.load(Ordering::Acquire),
@@ -235,7 +241,7 @@ impl Scenario {
         drop(tx);
     }
 
-    fn quiescence_search(&self, mut alpha: i32, mut beta: i32, qdepth: i32) -> i32 {
+    fn quiescence_search(&mut self, mut alpha: i32, mut beta: i32, qdepth: i32) -> i32 {
         let static_eval = StaticEval::static_evaluate(&self.board);
         let current_eval = static_eval.white - static_eval.black;
 
@@ -266,8 +272,9 @@ impl Scenario {
             Color::White => {
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.take(i);
-                    let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
-                    let eval = next_scenario.quiescence_search(alpha, beta, qdepth - 1);
+                    let undo = self.board.make_move(&player_move);
+                    let eval = self.quiescence_search(alpha, beta, qdepth - 1);
+                    self.board.unmake_move(&player_move, undo);
                     if eval >= beta {
                         return beta;
                     }
@@ -280,8 +287,9 @@ impl Scenario {
             Color::Black => {
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.take(i);
-                    let next_scenario = Scenario::new(self.board.make_unchecked_move(&player_move));
-                    let eval = next_scenario.quiescence_search(alpha, beta, qdepth - 1);
+                    let undo = self.board.make_move(&player_move);
+                    let eval = self.quiescence_search(alpha, beta, qdepth - 1);
+                    self.board.unmake_move(&player_move, undo);
                     if eval <= alpha {
                         return alpha;
                     }
