@@ -1,4 +1,5 @@
 use crate::components::{constants, pieces::Bitboard};
+use crate::moves::magic;
 
 /*
 * 8 0 0 0 0 0 0 0 0
@@ -94,71 +95,10 @@ pub fn knight(starting_position: Bitboard, blockers: Bitboard, _enemies: Bitboar
 }
 
 fn bishop_single(sq: u8, blockers: Bitboard, enemies: Bitboard) -> u64 {
-    let mut bits = 0u64;
-    let row = (sq / 8) as i32;
-    let col = (sq % 8) as i32;
-
-    let mut r = row + 1;
-    let mut c = col + 1;
-    while r < 8 && c < 8 {
-        let pos: u64 = 1 << (r * 8 + c);
-        if pos & blockers.bits != 0 {
-            break;
-        }
-        bits |= pos;
-        if pos & enemies.bits != 0 {
-            break;
-        }
-        r += 1;
-        c += 1;
-    }
-
-    r = row + 1;
-    c = col - 1;
-    while r < 8 && c >= 0 {
-        let pos: u64 = 1 << (r * 8 + c);
-        if pos & blockers.bits != 0 {
-            break;
-        }
-        bits |= pos;
-        if pos & enemies.bits != 0 {
-            break;
-        }
-        r += 1;
-        c -= 1;
-    }
-
-    r = row - 1;
-    c = col + 1;
-    while r >= 0 && c < 8 {
-        let pos: u64 = 1 << (r * 8 + c);
-        if pos & blockers.bits != 0 {
-            break;
-        }
-        bits |= pos;
-        if pos & enemies.bits != 0 {
-            break;
-        }
-        r -= 1;
-        c += 1;
-    }
-
-    r = row - 1;
-    c = col - 1;
-    while r >= 0 && c >= 0 {
-        let pos: u64 = 1 << (r * 8 + c);
-        if pos & blockers.bits != 0 {
-            break;
-        }
-        bits |= pos;
-        if pos & enemies.bits != 0 {
-            break;
-        }
-        r -= 1;
-        c -= 1;
-    }
-
-    bits
+    // magic::bishop_attacks returns all reachable squares (including the first
+    // blocker in each ray). We then strip friendly pieces: the caller cannot
+    // move to or through them.
+    magic::bishop_attacks(sq, blockers.bits | enemies.bits) & !blockers.bits
 }
 
 /// blockers = pieces of the same color
@@ -167,59 +107,12 @@ pub fn bishop(starting_position: Bitboard, blockers: Bitboard, enemies: Bitboard
     for sq in starting_position.single_squares() {
         result.bits |= bishop_single(sq, blockers, enemies);
     }
+
     result
 }
 
 fn rook_single(sq: u8, blockers: Bitboard, enemies: Bitboard) -> u64 {
-    let mut bits = 0u64;
-    let row = (sq / 8) as u32;
-    let col = (sq % 8) as u32;
-
-    for r in row + 1..8 {
-        let pos = 1u64 << (r * 8 + col);
-        if pos & blockers.bits != 0 {
-            break;
-        }
-        bits |= pos;
-        if pos & enemies.bits != 0 {
-            break;
-        }
-    }
-
-    for r in (0..row).rev() {
-        let pos = 1u64 << (r * 8 + col);
-        if pos & blockers.bits != 0 {
-            break;
-        }
-        bits |= pos;
-        if pos & enemies.bits != 0 {
-            break;
-        }
-    }
-
-    for c in col + 1..8 {
-        let pos = 1u64 << (row * 8 + c);
-        if pos & blockers.bits != 0 {
-            break;
-        }
-        bits |= pos;
-        if pos & enemies.bits != 0 {
-            break;
-        }
-    }
-
-    for c in (0..col).rev() {
-        let pos = 1u64 << (row * 8 + c);
-        if pos & blockers.bits != 0 {
-            break;
-        }
-        bits |= pos;
-        if pos & enemies.bits != 0 {
-            break;
-        }
-    }
-
-    bits
+    magic::rook_attacks(sq, blockers.bits | enemies.bits) & !blockers.bits
 }
 
 /// blockers = pieces of the same color
@@ -228,6 +121,7 @@ pub fn rook(starting_position: Bitboard, blockers: Bitboard, enemies: Bitboard) 
     for sq in starting_position.single_squares() {
         result.bits |= rook_single(sq, blockers, enemies);
     }
+
     result
 }
 

@@ -332,6 +332,9 @@ fn handle_go(board: &Board, tokens: &[&str]) {
 // ---------------------------------------------------------------------------
 
 fn main() {
+    // Pre-compute magic bitboard tables;
+    moves::magic::init();
+
     let stdin = io::stdin();
     let mut current_board = Board::new_game();
 
