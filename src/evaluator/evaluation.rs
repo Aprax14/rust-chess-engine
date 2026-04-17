@@ -169,7 +169,7 @@ impl Scenario {
         let main_beta = AtomicI32::new(i32::MAX);
         let stop_signal = AtomicBool::new(false);
 
-        available_moves.list[..len].sort_unstable_by(|a, b| b.rating.cmp(&a.rating));
+        available_moves.list[..len].sort_unstable_by_key(|b| std::cmp::Reverse(b.rating));
 
         available_moves.list[..available_moves.len()]
             .par_iter()
