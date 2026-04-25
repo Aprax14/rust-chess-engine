@@ -21,6 +21,24 @@ It uses UCI protocol, so you can plug it into any UCI-compatible GUI or lichess-
 cargo build --release
 ```
 
+## Benchmarks
+
+```bash
+cargo bench --bench chess
+```
+
+To compare performance before and after a change:
+
+```bash
+# save a baseline before your change
+cargo bench --bench chess -- --save-baseline before
+
+# run again after your change to see the diff
+cargo bench --bench chess -- --baseline before
+```
+
+HTML reports are written to `target/criterion/`.
+
 ---
 
 Btw: Cornelia 🐈 + Norman 🐈‍⬛ = Corman. They're my cats.

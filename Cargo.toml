@@ -12,5 +12,12 @@ strum_macros = "0.27.2"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "chess"
+harness = false
+
 [profile.release]
 debug = true

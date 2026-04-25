@@ -3,16 +3,12 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use components::{
+use corman::components::{
     board::Board,
     castle::CastleSide,
     pieces::{Color, PieceKind},
 };
-use moves::move_type::{Move, MoveKind, Scenario};
-
-mod components;
-mod evaluator;
-mod moves;
+use corman::moves::move_type::{Move, MoveKind, Scenario};
 
 const ENGINE_NAME: &str = "corman"; // my cats: Cornelia and Norman
 const ENGINE_AUTHOR: &str = "Damiano Scarpellini";
@@ -333,7 +329,7 @@ fn handle_go(board: &Board, tokens: &[&str]) {
 
 fn main() {
     // Pre-compute magic bitboard tables;
-    moves::magic::init();
+    corman::moves::magic::init();
 
     let stdin = io::stdin();
     let mut current_board = Board::new_game();

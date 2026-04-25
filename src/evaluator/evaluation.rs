@@ -18,7 +18,7 @@ const NULL_MOVE_R: i32 = 2;
 const QUIESCENCE_DEPTH: i32 = 4;
 
 impl Scenario {
-    fn minimax_alpha_beta(
+    pub fn minimax_alpha_beta(
         &mut self,
         depth: i32,
         mut alpha: i32,
