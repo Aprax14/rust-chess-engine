@@ -27,6 +27,8 @@ pub struct BBPosition {
     pub occupied_black: Bitboard,
     /// Cached squares occupation (`occupied_white | occupied_black`).
     pub occupied_all: Bitboard,
+    /// Maps each square index to the piece on it for O(1) lookup. Must be kept in sync.
+    piece_map: [Option<Piece>; 64],
 }
 
 impl<'a> IntoIterator for &'a BBPosition {
@@ -142,11 +144,12 @@ impl BBPosition {
             occupied_white: Bitboard::new(0),
             occupied_black: Bitboard::new(0),
             occupied_all: Bitboard::new(0),
+            piece_map: [None; 64],
         }
     }
 
-    /// Recomputes the three cached occupied fields from the 12 piece bitboards.
-    /// Call this after any mutation that goes through `get_mut()` directly
+    /// Recomputes all cached fields (occupied bitboards and piece map) from the 12 piece
+    /// bitboards. Call this after any mutation that goes through `get_mut()` directly
     /// (castle, en passant, FEN parsing). Hot-path moves use incremental updates instead.
     pub(crate) fn recompute_occupied(&mut self) {
         self.occupied_white = self.white_pawn
@@ -162,6 +165,19 @@ impl BBPosition {
             | self.black_queen
             | self.black_king;
         self.occupied_all = self.occupied_white | self.occupied_black;
+
+        // Build into a local array first to avoid a simultaneous mutable borrow on self.piece_map
+        // while self.into_iter() holds an immutable borrow of self.
+        let mut new_map = [None; 64];
+        for (piece, bitboard) in self.into_iter() {
+            let mut bits = bitboard.bits;
+            while bits != 0 {
+                let sq = bits.trailing_zeros() as usize;
+                new_map[sq] = Some(*piece);
+                bits &= bits - 1;
+            }
+        }
+        self.piece_map = new_map;
     }
 
     pub fn get<T>(&self, piece: T) -> Bitboard
@@ -256,13 +272,7 @@ impl BBPosition {
     }
 
     pub fn piece_at(&self, left_shift: u8) -> Option<Piece> {
-        for (piece, bitboard) in self.into_iter() {
-            if bitboard.bits & (1 << left_shift) != 0 {
-                return Some(*piece);
-            }
-        }
-
-        None
+        self.piece_map[left_shift as usize]
     }
 
     /// Generates all possible captures by piece.
@@ -548,6 +558,9 @@ impl BBPosition {
                     }
                 }
                 self.occupied_all = self.occupied_white | self.occupied_black;
+                // incremental piece_map update
+                self.piece_map[from as usize] = None;
+                self.piece_map[to as usize] = Some(player_move.piece);
             }
             MoveKind::Castle(side) => {
                 castle::apply_castling_in_place(self, player_move.piece.color, side);
@@ -587,6 +600,9 @@ impl BBPosition {
                     }
                 }
                 self.occupied_all = self.occupied_white | self.occupied_black;
+                // incremental piece_map update: pawn leaves, promoted piece arrives
+                self.piece_map[from as usize] = None;
+                self.piece_map[to as usize] = Some(Piece::new(player_move.piece.color, to_piece));
             }
         }
     }
@@ -618,6 +634,9 @@ impl BBPosition {
                     }
                 }
                 self.occupied_all = self.occupied_white | self.occupied_black;
+                // incremental piece_map update
+                self.piece_map[from as usize] = Some(player_move.piece);
+                self.piece_map[to as usize] = captured;
             }
             MoveKind::Castle(side) => {
                 castle::unapply_castling_in_place(self, player_move.piece.color, side);
@@ -657,6 +676,9 @@ impl BBPosition {
                     }
                 }
                 self.occupied_all = self.occupied_white | self.occupied_black;
+                // incremental piece_map update: restore pawn, restore captured (or None)
+                self.piece_map[from as usize] = Some(player_move.piece);
+                self.piece_map[to as usize] = captured;
             }
         }
     }
