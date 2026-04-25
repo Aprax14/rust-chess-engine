@@ -42,14 +42,20 @@ pub struct TranspositionTable {
     mask: usize,
 }
 
-impl TranspositionTable {
-    /// Creates a table with ~1 M entries (≈ 20 MB).
-    pub fn new() -> Self {
+impl Default for TranspositionTable {
+    fn default() -> Self {
         let size = 1 << 20;
         TranspositionTable {
             table: vec![TtEntry::EMPTY; size],
             mask: size - 1,
         }
+    }
+}
+
+impl TranspositionTable {
+    /// Creates a table with ~1 M entries (≈ 20 MB).
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Returns the stored result if the entry matches `hash` and was computed

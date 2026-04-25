@@ -17,7 +17,7 @@ pub enum Castle {
 }
 
 impl Castle {
-    pub fn from_str(s: &str) -> Result<(Self, Self), anyhow::Error> {
+    pub fn parse_from_str(s: &str) -> Result<(Self, Self), anyhow::Error> {
         match s {
             "KQkq" => Ok((Self::Both, Self::Both)),
             "Kkq" => Ok((Self::King, Self::Both)),

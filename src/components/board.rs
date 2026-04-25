@@ -95,7 +95,7 @@ impl Board {
             "-" => Bitboard { bits: 0 },
             s => Bitboard::try_from(s)?,
         };
-        let (white_can_castle, black_can_castle) = Castle::from_str(castling_rights)?;
+        let (white_can_castle, black_can_castle) = Castle::parse_from_str(castling_rights)?;
         let reps_50: u8 = reps_50.parse()?;
         let moves_count: u32 = moves_count.parse()?;
 

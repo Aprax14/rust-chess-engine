@@ -6,7 +6,7 @@ use crate::components::{
 
 use super::utils;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct StaticEval {
     pub white: i32,
     pub black: i32,
@@ -14,7 +14,7 @@ pub struct StaticEval {
 
 impl StaticEval {
     pub fn new() -> Self {
-        StaticEval { white: 0, black: 0 }
+        Self::default()
     }
 
     pub fn add(&mut self, side: Color, value: i32) {
