@@ -1,9 +1,5 @@
 use crate::{
-    components::{
-        board::Board,
-        castle, en_passant,
-        pieces::{Color, PieceKind},
-    },
+    components::{board::Board, castle, en_passant, pieces::PieceKind},
     evaluator,
 };
 use strum::IntoEnumIterator;
@@ -56,14 +52,20 @@ impl Moves {
         self.len += 1;
     }
 
-    /// Sorts the move list by rating descending (best move first).
-    fn sort(&mut self) {
-        self.list[..self.len as usize].sort_unstable_by_key(|rm| std::cmp::Reverse(rm.rating));
-    }
+    /// Returns the move at `index`, using pick-best selection sort.
+    /// Finds the highest-rated move in list[index..len], swaps it to position `index`,
+    /// and returns it. This means only the moves actually examined by the search get sorted,
+    /// which is faster than sorting all moves upfront when alpha-beta prunes early.
+    pub fn get(&mut self, index: usize) -> Move {
+        let len = self.len as usize;
+        let mut best_idx = index;
+        for j in (index + 1)..len {
+            if self.list[j].rating > self.list[best_idx].rating {
+                best_idx = j;
+            }
+        }
+        self.list.swap(index, best_idx);
 
-    /// Returns the move at `index`.
-    /// The list is pre-sorted by `generate_moves()` (best moves first).
-    pub fn get(&self, index: usize) -> Move {
         self.list[index].piece_move
     }
 
@@ -86,10 +88,6 @@ impl Board {
     pub fn generate_moves(&self, only_critical: bool) -> Moves {
         let mut moves = Moves::new();
         let in_check = self.position.is_in_check(self.turn);
-
-        // Pre-compute defended squares once for the move scoring loop.
-        let defended_white = self.position.defended_squares(Color::White);
-        let defended_black = self.position.defended_squares(Color::Black);
 
         let enemy_squares = self.position.occupied_by(self.turn.other()).bits;
         for (piece, bitboard) in self.position.into_iter() {
@@ -143,8 +141,6 @@ impl Board {
                             let eval = evaluator::utils::move_score_with_mvv_lva(
                                 &promotion,
                                 &self.position,
-                                defended_white,
-                                defended_black,
                             );
                             moves.push(promotion, eval);
                         }
@@ -155,8 +151,6 @@ impl Board {
                         let eval = evaluator::utils::move_score_with_mvv_lva(
                             &current_move,
                             &self.position,
-                            defended_white,
-                            defended_black,
                         );
                         moves.push(current_move, eval);
                     } else if !only_critical {
@@ -165,8 +159,6 @@ impl Board {
                         let eval = evaluator::utils::move_score_with_mvv_lva(
                             &current_move,
                             &self.position,
-                            defended_white,
-                            defended_black,
                         );
                         moves.push(current_move, eval);
                     }
@@ -183,22 +175,12 @@ impl Board {
             );
 
             if let Some(m) = castling_moves.0 {
-                let eval = evaluator::utils::move_score_with_mvv_lva(
-                    &m,
-                    &self.position,
-                    defended_white,
-                    defended_black,
-                );
+                let eval = evaluator::utils::move_score_with_mvv_lva(&m, &self.position);
                 moves.push(m, eval);
             }
 
             if let Some(m) = castling_moves.1 {
-                let eval = evaluator::utils::move_score_with_mvv_lva(
-                    &m,
-                    &self.position,
-                    defended_white,
-                    defended_black,
-                );
+                let eval = evaluator::utils::move_score_with_mvv_lva(&m, &self.position);
                 moves.push(m, eval);
             }
         }
@@ -213,16 +195,9 @@ impl Board {
             {
                 continue;
             }
-            let eval = evaluator::utils::move_score_with_mvv_lva(
-                &ep_move,
-                &self.position,
-                defended_white,
-                defended_black,
-            );
+            let eval = evaluator::utils::move_score_with_mvv_lva(&ep_move, &self.position);
             moves.push(ep_move, eval);
         }
-
-        moves.sort();
 
         moves
     }

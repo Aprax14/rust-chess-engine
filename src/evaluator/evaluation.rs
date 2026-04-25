@@ -39,7 +39,7 @@ impl Scenario {
             }
         }
 
-        let available_moves = self.board.generate_moves(false);
+        let mut available_moves = self.board.generate_moves(false);
 
         if available_moves.is_empty() {
             let score = if self.board.position.is_in_check(Color::White) {
@@ -265,7 +265,7 @@ impl Scenario {
             return current_eval;
         }
 
-        let available_moves = self.board.generate_moves(true);
+        let mut available_moves = self.board.generate_moves(true);
         if available_moves.is_empty() {
             if self.board.position.is_in_check(self.board.turn) {
                 return match self.board.turn {

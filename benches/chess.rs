@@ -57,7 +57,7 @@ fn bench_search(c: &mut Criterion) {
     let mut group = c.benchmark_group("search_depth_4");
     // Search is expensive: keep sample count low and give a longer time window.
     group.sample_size(20);
-    group.measurement_time(Duration::from_secs(30));
+    group.measurement_time(Duration::from_secs(60));
     for (name, fen) in POSITIONS {
         let board = Board::from_forsyth_edwards(fen).unwrap();
         group.bench_function(*name, |b| {

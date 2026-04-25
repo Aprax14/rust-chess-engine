@@ -1,7 +1,7 @@
 use crate::{
     components::{
         constants,
-        pieces::{Bitboard, Color, Piece, PieceKind},
+        pieces::{Bitboard, Piece, PieceKind},
         position::BBPosition,
     },
     moves::move_type::{Move, MoveKind},
@@ -31,31 +31,11 @@ pub fn attacked_squares_score(
     score
 }
 
-/// Returns true if `square` is defended by `color`, using pre-computed bitboards.
-fn is_defended_by(
-    square: u8,
-    color: Color,
-    defended_white: Bitboard,
-    defended_black: Bitboard,
-) -> bool {
-    let defended = match color {
-        Color::White => defended_white,
-        Color::Black => defended_black,
-    };
-
-    defended.bits & (1u64 << square) != 0
-}
-
-fn inner_move_score_no_captures(
-    m: &Move,
-    board_position: &BBPosition,
-    defended_white: Bitboard,
-    defended_black: Bitboard,
-) -> i32 {
+fn inner_move_score_no_captures(m: &Move, board_position: &BBPosition) -> i32 {
     match m.action {
         MoveKind::Castle(_) => constants::CASTLING_VALUE,
         MoveKind::EnPassant { to, .. } => {
-            if is_defended_by(to, m.piece.color.other(), defended_white, defended_black) {
+            if board_position.square_is_defended_by(to, m.piece.color.other()) {
                 0
             } else {
                 PieceKind::Pawn.value()
@@ -74,18 +54,13 @@ fn inner_move_score_no_captures(
     }
 }
 
-pub fn move_score_with_mvv_lva(
-    m: &Move,
-    board_position: &BBPosition,
-    defended_white: Bitboard,
-    defended_black: Bitboard,
-) -> i32 {
+pub fn move_score_with_mvv_lva(m: &Move, board_position: &BBPosition) -> i32 {
     match m.action {
         MoveKind::Castle(_) => constants::CASTLING_VALUE,
         // En passant always captures a pawn of equal value (pawn for pawn).
         // The target square is empty, but it can still be defended by another piece.
         MoveKind::EnPassant { to, .. } => {
-            if is_defended_by(to, m.piece.color.other(), defended_white, defended_black) {
+            if board_position.square_is_defended_by(to, m.piece.color.other()) {
                 0
             } else {
                 PieceKind::Pawn.value()
@@ -93,16 +68,11 @@ pub fn move_score_with_mvv_lva(
         }
         MoveKind::Standard { to, captured, .. } => {
             let Some(victim) = captured else {
-                return inner_move_score_no_captures(
-                    m,
-                    board_position,
-                    defended_white,
-                    defended_black,
-                );
+                return inner_move_score_no_captures(m, board_position);
             };
 
             let mut capture_value = victim.kind.value() - m.piece.kind.value();
-            if is_defended_by(to, victim.color, defended_white, defended_black) {
+            if board_position.square_is_defended_by(to, victim.color) {
                 if capture_value < 0 {
                     // we are capturing a defended less valuable piece with a more valuable piece
                     capture_value = capture_value * 3 / 2;
@@ -127,10 +97,8 @@ pub fn move_score_with_mvv_lva(
                     action: MoveKind::Standard { from, to, captured },
                 },
                 board_position,
-                defended_white,
-                defended_black,
             );
-            if !is_defended_by(to, m.piece.color.other(), defended_white, defended_black) {
+            if !board_position.square_is_defended_by(to, m.piece.color.other()) {
                 // square is not defended so the promoted piece is going to remain on the board
                 standard_eval + to_piece.value() - PieceKind::Pawn.value()
             } else {
