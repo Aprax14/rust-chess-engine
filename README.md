@@ -39,6 +39,33 @@ cargo bench --bench chess -- --baseline before
 
 HTML reports are written to `target/criterion/`.
 
----
+## Testing against Stockfish
+
+Requires [cutechess-cli](https://github.com/cutechess/cutechess) and Stockfish installed.
+
+Build the engine first:
+
+```bash
+cargo build --release
+```
+
+Then run:
+
+```bash
+cutechess-cli \
+  -engine name=corman cmd=./target/release/corman \
+  -engine name=stockfish cmd=stockfish option.UCI_LimitStrength=true option.UCI_Elo=1800 \
+  -each proto=uci tc=40/10 \
+  -openings format=epd file=2moves_v1.epd order=random \
+  -games 10 -repeat -concurrency 1 \
+  -pgnout results.pgn
+```
+
+- `tc=40/10` -> 40 moves in 10 seconds per side
+- `UCI_Elo=1800` -> limits Stockfish strength (raise to make it harder)
+- `-games 10 -repeat` -> plays each opening twice (once per color)
+- `-pgnout results.pgn` -> saves the games for review
+
+-----------
 
 Btw: Cornelia 🐈 + Norman 🐈‍⬛ = Corman. They're my cats.
