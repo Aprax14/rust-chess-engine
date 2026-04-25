@@ -99,6 +99,7 @@ pub fn bitboards_after_en_passant(
 ) -> BBPosition {
     let mut new_bitboards = current_bitboards.clone();
     apply_en_passant_in_place(&mut new_bitboards, player_move);
+    new_bitboards.recompute_occupied();
 
     new_bitboards
 }

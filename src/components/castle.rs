@@ -175,6 +175,7 @@ pub fn bitboards_after_castling(
 ) -> BBPosition {
     let mut new_bitboards = current_bitboards.clone();
     apply_castling_in_place(&mut new_bitboards, turn, side);
+    new_bitboards.recompute_occupied();
 
     new_bitboards
 }

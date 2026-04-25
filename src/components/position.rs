@@ -21,6 +21,12 @@ pub struct BBPosition {
     black_rook: Bitboard,
     black_queen: Bitboard,
     black_king: Bitboard,
+    /// Cached white occupation. Must be kept in sync with the 6 white fields.
+    pub occupied_white: Bitboard,
+    /// Cached black occupation. Must be kept in sync with the 6 black fields.
+    pub occupied_black: Bitboard,
+    /// Cached squares occupation (`occupied_white | occupied_black`).
+    pub occupied_all: Bitboard,
 }
 
 impl<'a> IntoIterator for &'a BBPosition {
@@ -133,7 +139,29 @@ impl BBPosition {
             black_rook: Bitboard::new(0),
             black_queen: Bitboard::new(0),
             black_king: Bitboard::new(0),
+            occupied_white: Bitboard::new(0),
+            occupied_black: Bitboard::new(0),
+            occupied_all: Bitboard::new(0),
         }
+    }
+
+    /// Recomputes the three cached occupied fields from the 12 piece bitboards.
+    /// Call this after any mutation that goes through `get_mut()` directly
+    /// (castle, en passant, FEN parsing). Hot-path moves use incremental updates instead.
+    pub(crate) fn recompute_occupied(&mut self) {
+        self.occupied_white = self.white_pawn
+            | self.white_knight
+            | self.white_bishop
+            | self.white_rook
+            | self.white_queen
+            | self.white_king;
+        self.occupied_black = self.black_pawn
+            | self.black_knight
+            | self.black_bishop
+            | self.black_rook
+            | self.black_queen
+            | self.black_king;
+        self.occupied_all = self.occupied_white | self.occupied_black;
     }
 
     pub fn get<T>(&self, piece: T) -> Bitboard
@@ -199,38 +227,32 @@ impl BBPosition {
             }
         }
 
+        bb.recompute_occupied();
+
         Ok(bb)
     }
 
     pub fn occupied_cells(&self) -> Bitboard {
-        Bitboard::new(self.into_iter().fold(0u64, |acc, (_, pos)| acc | pos.bits))
+        self.occupied_all
     }
 
     pub fn empty_cells(&self) -> Bitboard {
-        Bitboard::new(!self.occupied_cells().bits)
+        !self.occupied_all
     }
 
     pub fn occupied_by(&self, c: Color) -> Bitboard {
-        Bitboard::new(
-            self.into_iter()
-                .filter(|(piece, _)| piece.color == c)
-                .fold(0u64, |acc, (_, pos)| acc | pos.bits),
-        )
+        match c {
+            Color::White => self.occupied_white,
+            Color::Black => self.occupied_black,
+        }
     }
 
-    /// Returns `(ours, enemies)` in a single pass over the 12 bitboards.
+    /// Returns `(ours, enemies)` using the cached occupied fields — O(1).
     pub fn occupied_by_both(&self, color: Color) -> (Bitboard, Bitboard) {
-        let (ours, enemies) =
-            self.into_iter()
-                .fold((0u64, 0u64), |(ours, enemies), (piece, bb)| {
-                    if piece.color == color {
-                        (ours | bb.bits, enemies)
-                    } else {
-                        (ours, enemies | bb.bits)
-                    }
-                });
-
-        (Bitboard::new(ours), Bitboard::new(enemies))
+        match color {
+            Color::White => (self.occupied_white, self.occupied_black),
+            Color::Black => (self.occupied_black, self.occupied_white),
+        }
     }
 
     pub fn piece_at(&self, left_shift: u8) -> Option<Piece> {
@@ -503,19 +525,37 @@ impl BBPosition {
     pub fn apply_move(&mut self, player_move: &Move) {
         match player_move.action {
             MoveKind::Standard { from, to, captured } => {
-                let from_bb = 1u64 << from;
-                let to_bb = 1u64 << to;
+                let from_mask = Bitboard::new(1u64 << from);
+                let to_mask = Bitboard::new(1u64 << to);
                 if let Some(cap) = captured {
-                    self.get_mut(cap).bits &= !to_bb;
+                    self.get_mut(cap).bits &= !to_mask.bits;
                 }
                 let piece_bb = self.get_mut(player_move.piece);
-                piece_bb.bits = (piece_bb.bits & !from_bb) | to_bb;
+                piece_bb.bits = (piece_bb.bits & !from_mask.bits) | to_mask.bits;
+                // incremental occupied update
+                match player_move.piece.color {
+                    Color::White => {
+                        self.occupied_white = (self.occupied_white & !from_mask) | to_mask;
+                        if captured.is_some() {
+                            self.occupied_black = self.occupied_black & !to_mask;
+                        }
+                    }
+                    Color::Black => {
+                        self.occupied_black = (self.occupied_black & !from_mask) | to_mask;
+                        if captured.is_some() {
+                            self.occupied_white = self.occupied_white & !to_mask;
+                        }
+                    }
+                }
+                self.occupied_all = self.occupied_white | self.occupied_black;
             }
             MoveKind::Castle(side) => {
                 castle::apply_castling_in_place(self, player_move.piece.color, side);
+                self.recompute_occupied();
             }
             MoveKind::EnPassant { .. } => {
                 en_passant::apply_en_passant_in_place(self, player_move);
+                self.recompute_occupied();
             }
             MoveKind::Promote {
                 from,
@@ -523,14 +563,30 @@ impl BBPosition {
                 to_piece,
                 captured,
             } => {
-                let from_bb = 1u64 << from;
-                let to_bb = 1u64 << to;
+                let from_mask = Bitboard::new(1u64 << from);
+                let to_mask = Bitboard::new(1u64 << to);
                 if let Some(cap) = captured {
-                    self.get_mut(cap).bits &= !to_bb;
+                    self.get_mut(cap).bits &= !to_mask.bits;
                 }
-                self.get_mut(player_move.piece).bits &= !from_bb;
+                self.get_mut(player_move.piece).bits &= !from_mask.bits;
                 self.get_mut(Piece::new(player_move.piece.color, to_piece))
-                    .bits |= to_bb;
+                    .bits |= to_mask.bits;
+                // incremental occupied update (same square semantics as Standard)
+                match player_move.piece.color {
+                    Color::White => {
+                        self.occupied_white = (self.occupied_white & !from_mask) | to_mask;
+                        if captured.is_some() {
+                            self.occupied_black = self.occupied_black & !to_mask;
+                        }
+                    }
+                    Color::Black => {
+                        self.occupied_black = (self.occupied_black & !from_mask) | to_mask;
+                        if captured.is_some() {
+                            self.occupied_white = self.occupied_white & !to_mask;
+                        }
+                    }
+                }
+                self.occupied_all = self.occupied_white | self.occupied_black;
             }
         }
     }
@@ -539,19 +595,37 @@ impl BBPosition {
     pub fn unapply_move(&mut self, player_move: &Move) {
         match player_move.action {
             MoveKind::Standard { from, to, captured } => {
-                let from_bb = 1u64 << from;
-                let to_bb = 1u64 << to;
+                let from_mask = Bitboard::new(1u64 << from);
+                let to_mask = Bitboard::new(1u64 << to);
                 let piece_bb = self.get_mut(player_move.piece);
-                piece_bb.bits = (piece_bb.bits & !to_bb) | from_bb;
+                piece_bb.bits = (piece_bb.bits & !to_mask.bits) | from_mask.bits;
                 if let Some(cap) = captured {
-                    self.get_mut(cap).bits |= to_bb;
+                    self.get_mut(cap).bits |= to_mask.bits;
                 }
+                // incremental occupied update
+                match player_move.piece.color {
+                    Color::White => {
+                        self.occupied_white = (self.occupied_white & !to_mask) | from_mask;
+                        if captured.is_some() {
+                            self.occupied_black = self.occupied_black | to_mask;
+                        }
+                    }
+                    Color::Black => {
+                        self.occupied_black = (self.occupied_black & !to_mask) | from_mask;
+                        if captured.is_some() {
+                            self.occupied_white = self.occupied_white | to_mask;
+                        }
+                    }
+                }
+                self.occupied_all = self.occupied_white | self.occupied_black;
             }
             MoveKind::Castle(side) => {
                 castle::unapply_castling_in_place(self, player_move.piece.color, side);
+                self.recompute_occupied();
             }
             MoveKind::EnPassant { .. } => {
                 en_passant::unapply_en_passant_in_place(self, player_move);
+                self.recompute_occupied();
             }
             MoveKind::Promote {
                 from,
@@ -559,14 +633,30 @@ impl BBPosition {
                 to_piece,
                 captured,
             } => {
-                let from_bb = 1u64 << from;
-                let to_bb = 1u64 << to;
+                let from_mask = Bitboard::new(1u64 << from);
+                let to_mask = Bitboard::new(1u64 << to);
                 self.get_mut(Piece::new(player_move.piece.color, to_piece))
-                    .bits &= !to_bb;
-                self.get_mut(player_move.piece).bits |= from_bb;
+                    .bits &= !to_mask.bits;
+                self.get_mut(player_move.piece).bits |= from_mask.bits;
                 if let Some(cap) = captured {
-                    self.get_mut(cap).bits |= to_bb;
+                    self.get_mut(cap).bits |= to_mask.bits;
                 }
+                // incremental occupied update
+                match player_move.piece.color {
+                    Color::White => {
+                        self.occupied_white = (self.occupied_white & !to_mask) | from_mask;
+                        if captured.is_some() {
+                            self.occupied_black = self.occupied_black | to_mask;
+                        }
+                    }
+                    Color::Black => {
+                        self.occupied_black = (self.occupied_black & !to_mask) | from_mask;
+                        if captured.is_some() {
+                            self.occupied_white = self.occupied_white | to_mask;
+                        }
+                    }
+                }
+                self.occupied_all = self.occupied_white | self.occupied_black;
             }
         }
     }
@@ -592,6 +682,7 @@ impl BBPosition {
                     resulting_bitboards.get_mut(cap).bits &= !to_bb.bits;
                 }
 
+                resulting_bitboards.recompute_occupied();
                 resulting_bitboards
             }
             MoveKind::Castle(side) => {
@@ -623,6 +714,7 @@ impl BBPosition {
                     resulting_bitboards.get_mut(cap).bits &= !to_bb.bits;
                 }
 
+                resulting_bitboards.recompute_occupied();
                 resulting_bitboards
             }
         }
