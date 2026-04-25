@@ -39,7 +39,7 @@ impl Scenario {
             }
         }
 
-        let mut available_moves = self.board.generate_moves(false);
+        let available_moves = self.board.generate_moves(false);
 
         if available_moves.is_empty() {
             let score = if self.board.position.is_in_check(Color::White) {
@@ -98,7 +98,7 @@ impl Scenario {
                 let mut broke_early = false;
 
                 for i in 0..available_moves.len() {
-                    let player_move = available_moves.take(i);
+                    let player_move = available_moves.get(i);
                     let undo = self.board.make_move(&player_move);
                     let inner_eval = self.minimax_alpha_beta(depth - 1, alpha, beta, tt, true);
                     self.board.unmake_move(&player_move, undo);
@@ -128,7 +128,7 @@ impl Scenario {
                 let mut broke_early = false;
 
                 for i in 0..available_moves.len() {
-                    let player_move = available_moves.take(i);
+                    let player_move = available_moves.get(i);
                     let undo = self.board.make_move(&player_move);
                     let inner_eval = self.minimax_alpha_beta(depth - 1, alpha, beta, tt, true);
                     self.board.unmake_move(&player_move, undo);
@@ -158,8 +158,7 @@ impl Scenario {
     }
 
     pub fn parallel_minimax_alpha_beta(&self, depth: i32, tx: Sender<(Move, i32)>) {
-        let mut available_moves = self.board.generate_moves(false);
-        let len = available_moves.len();
+        let available_moves = self.board.generate_moves(false);
 
         let best_eval = AtomicI32::new(match self.board.turn {
             Color::White => i32::MIN,
@@ -172,8 +171,6 @@ impl Scenario {
         // Single shared TT for all threads. The lockless implementation handles
         // concurrent reads and writes safely via the XOR integrity check.
         let tt = TranspositionTable::new();
-
-        available_moves.list[..len].sort_unstable_by_key(|b| std::cmp::Reverse(b.rating));
 
         available_moves.list[..available_moves.len()]
             .par_iter()
@@ -268,7 +265,7 @@ impl Scenario {
             return current_eval;
         }
 
-        let mut available_moves = self.board.generate_moves(true);
+        let available_moves = self.board.generate_moves(true);
         if available_moves.is_empty() {
             if self.board.position.is_in_check(self.board.turn) {
                 return match self.board.turn {
@@ -286,7 +283,7 @@ impl Scenario {
         match self.board.turn {
             Color::White => {
                 for i in 0..available_moves.len() {
-                    let player_move = available_moves.take(i);
+                    let player_move = available_moves.get(i);
                     let undo = self.board.make_move(&player_move);
                     let eval = self.quiescence_search(alpha, beta, qdepth - 1);
                     self.board.unmake_move(&player_move, undo);
@@ -301,7 +298,7 @@ impl Scenario {
             }
             Color::Black => {
                 for i in 0..available_moves.len() {
-                    let player_move = available_moves.take(i);
+                    let player_move = available_moves.get(i);
                     let undo = self.board.make_move(&player_move);
                     let eval = self.quiescence_search(alpha, beta, qdepth - 1);
                     self.board.unmake_move(&player_move, undo);
