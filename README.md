@@ -23,21 +23,14 @@ cargo build --release
 
 ## Benchmarks
 
-```bash
-cargo bench --bench chess
-```
-
-To compare performance before and after a change:
+`bench.sh` runs the benchmarks, compares against the previous baseline, and saves the results to `benches/results.md`. 
+It's used to keep a minimal record of performance across commits.
 
 ```bash
-# save a baseline before your change
-cargo bench --bench chess -- --save-baseline before
-
-# run again after your change to see the diff
-cargo bench --bench chess -- --baseline before
+./bench.sh
 ```
 
-HTML reports are written to `target/criterion/`.
+For more detailed analysis, HTML reports with graphs are written to `target/criterion/` after any bench run.
 
 ## Testing against Stockfish
 
