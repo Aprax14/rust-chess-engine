@@ -63,8 +63,8 @@ fn bench_search(c: &mut Criterion) {
         group.bench_function(*name, |b| {
             b.iter(|| {
                 let mut scenario = Scenario::new(board.clone());
-                let mut tt = TranspositionTable::new();
-                black_box(scenario.minimax_alpha_beta(4, i32::MIN + 1, i32::MAX - 1, &mut tt, true))
+                let tt = TranspositionTable::new();
+                black_box(scenario.minimax_alpha_beta(4, i32::MIN + 1, i32::MAX - 1, &tt, true))
             })
         });
     }

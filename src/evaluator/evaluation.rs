@@ -23,7 +23,7 @@ impl Scenario {
         depth: i32,
         mut alpha: i32,
         mut beta: i32,
-        tt: &mut TranspositionTable,
+        tt: &TranspositionTable,
         allow_null_move: bool,
     ) -> i32 {
         // Probe the transposition table. An exact hit lets us return immediately;
@@ -169,6 +169,10 @@ impl Scenario {
         let main_beta = AtomicI32::new(i32::MAX);
         let stop_signal = AtomicBool::new(false);
 
+        // Single shared TT for all threads. The lockless implementation handles
+        // concurrent reads and writes safely via the XOR integrity check.
+        let tt = TranspositionTable::new();
+
         available_moves.list[..len].sort_unstable_by_key(|b| std::cmp::Reverse(b.rating));
 
         available_moves.list[..available_moves.len()]
@@ -180,10 +184,6 @@ impl Scenario {
                      piece_move: player_move,
                      rating: _,
                  }| {
-                    // Each parallel task owns its own transposition table so that
-                    // no locking is needed between threads.
-                    let mut tt = TranspositionTable::new();
-
                     let turn = self.board.turn;
 
                     if stop_signal.load(Ordering::Acquire) {
@@ -199,7 +199,7 @@ impl Scenario {
                         depth - 1,
                         main_alpha.load(Ordering::Acquire),
                         main_beta.load(Ordering::Acquire),
-                        &mut tt,
+                        &tt,
                         true,
                     );
 
