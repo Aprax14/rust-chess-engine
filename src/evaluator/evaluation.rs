@@ -26,6 +26,11 @@ impl Scenario {
         tt: &TranspositionTable,
         allow_null_move: bool,
     ) -> i32 {
+        // The window as received from the caller: needed to classify the result
+        // (exact / lower bound / upper bound) before storing it in the TT.
+        let alpha_orig = alpha;
+        let beta_orig = beta;
+
         // Probe the transposition table. An exact hit lets us return immediately;
         // a bound hit narrows the alpha-beta window and may still cause a cutoff.
         if let Some(result) = tt.probe(self.board.hash, depth) {
@@ -95,7 +100,6 @@ impl Scenario {
         match self.board.turn {
             Color::White => {
                 let mut max_eval = i32::MIN;
-                let mut broke_early = false;
 
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.get(i);
@@ -108,14 +112,16 @@ impl Scenario {
                     }
                     alpha = cmp::max(alpha, inner_eval);
                     if alpha >= beta {
-                        broke_early = true;
                         break;
                     }
                 }
 
-                // Beta cutoff → lower bound (real score may be even higher).
-                // All moves explored → exact value.
-                let bound = if broke_early {
+                // Fail low (no move beat alpha) → upper bound: the real score may be even lower.
+                // Fail high (beta cutoff) → lower bound: the real score may be even higher.
+                // Otherwise the score is inside the window → exact value.
+                let bound = if max_eval <= alpha_orig {
+                    Bound::Upper
+                } else if max_eval >= beta {
                     Bound::Lower
                 } else {
                     Bound::Exact
@@ -125,7 +131,6 @@ impl Scenario {
             }
             Color::Black => {
                 let mut min_eval = i32::MAX;
-                let mut broke_early = false;
 
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.get(i);
@@ -139,14 +144,16 @@ impl Scenario {
 
                     beta = cmp::min(beta, inner_eval);
                     if alpha >= beta {
-                        broke_early = true;
                         break;
                     }
                 }
 
-                // Alpha cutoff → upper bound (real score may be even lower).
-                // All moves explored → exact value.
-                let bound = if broke_early {
+                // Fail high (no move went below beta) → lower bound: the real score may be even higher.
+                // Fail low (alpha cutoff) → upper bound: the real score may be even lower.
+                // Otherwise the score is inside the window → exact value.
+                let bound = if min_eval >= beta_orig {
+                    Bound::Lower
+                } else if min_eval <= alpha {
                     Bound::Upper
                 } else {
                     Bound::Exact
