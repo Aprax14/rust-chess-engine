@@ -49,20 +49,29 @@ impl Scenario {
         let beta_orig = beta;
         let ply = self.plies_from_root();
 
-        // Probe the transposition table. An exact hit lets us return immediately;
-        // a bound hit narrows the alpha-beta window and may still cause a cutoff.
-        if let Some(result) = tt.probe(self.board.hash, depth, ply) {
-            match result.bound {
-                Bound::Exact => return result.score,
-                Bound::Lower => alpha = alpha.max(result.score),
-                Bound::Upper => beta = beta.min(result.score),
-            }
-            if alpha >= beta {
-                return result.score;
+        // Probe the transposition table. If the entry is deep enough, an exact hit lets us
+        // return immediately and a bound hit narrows the alpha-beta window (possibly to a cutoff).
+        // Whatever its depth, the stored best move is searched first: it is very likely
+        // to still be the best one, and searching it first maximizes alpha-beta cutoffs.
+        let mut hash_move = 0;
+        if let Some(result) = tt.probe(self.board.hash, ply) {
+            hash_move = result.best_move;
+            if result.depth >= depth {
+                match result.bound {
+                    Bound::Exact => return result.score,
+                    Bound::Lower => alpha = alpha.max(result.score),
+                    Bound::Upper => beta = beta.min(result.score),
+                }
+                if alpha >= beta {
+                    return result.score;
+                }
             }
         }
 
         let mut available_moves = self.board.generate_moves(false);
+        if hash_move != 0 {
+            available_moves.prioritize(hash_move);
+        }
 
         if available_moves.is_empty() {
             let score = if self.board.position.is_in_check(self.board.turn) {
@@ -71,7 +80,7 @@ impl Scenario {
                 0 // stalemate
             };
             // Terminal nodes are exact at any depth.
-            tt.store(self.board.hash, TERMINAL_DEPTH, ply, score, Bound::Exact);
+            tt.store(self.board.hash, TERMINAL_DEPTH, ply, score, Bound::Exact, 0);
             return score;
         }
 
@@ -99,13 +108,13 @@ impl Scenario {
                 match self.board.turn {
                     Color::White => {
                         if null_eval >= beta {
-                            tt.store(self.board.hash, depth, ply, beta, Bound::Lower);
+                            tt.store(self.board.hash, depth, ply, beta, Bound::Lower, 0);
                             return beta;
                         }
                     }
                     Color::Black => {
                         if null_eval <= alpha {
-                            tt.store(self.board.hash, depth, ply, alpha, Bound::Upper);
+                            tt.store(self.board.hash, depth, ply, alpha, Bound::Upper, 0);
                             return alpha;
                         }
                     }
@@ -116,6 +125,7 @@ impl Scenario {
         match self.board.turn {
             Color::White => {
                 let mut max_eval = i32::MIN;
+                let mut best_move = 0;
 
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.get(i);
@@ -125,6 +135,7 @@ impl Scenario {
 
                     if inner_eval > max_eval {
                         max_eval = inner_eval;
+                        best_move = player_move.to_compact();
                     }
                     alpha = cmp::max(alpha, inner_eval);
                     if alpha >= beta {
@@ -142,11 +153,12 @@ impl Scenario {
                 } else {
                     Bound::Exact
                 };
-                tt.store(self.board.hash, depth, ply, max_eval, bound);
+                tt.store(self.board.hash, depth, ply, max_eval, bound, best_move);
                 max_eval
             }
             Color::Black => {
                 let mut min_eval = i32::MAX;
+                let mut best_move = 0;
 
                 for i in 0..available_moves.len() {
                     let player_move = available_moves.get(i);
@@ -156,6 +168,7 @@ impl Scenario {
 
                     if inner_eval < min_eval {
                         min_eval = inner_eval;
+                        best_move = player_move.to_compact();
                     }
 
                     beta = cmp::min(beta, inner_eval);
@@ -174,7 +187,7 @@ impl Scenario {
                 } else {
                     Bound::Exact
                 };
-                tt.store(self.board.hash, depth, ply, min_eval, bound);
+                tt.store(self.board.hash, depth, ply, min_eval, bound, best_move);
                 min_eval
             }
         }

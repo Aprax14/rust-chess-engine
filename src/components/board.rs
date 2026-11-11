@@ -398,7 +398,7 @@ impl Board {
     }
 
     /// Returns (king_from, king_to, rook_from, rook_to) bit positions for a castling move.
-    fn castle_piece_squares(color: Color, side: CastleSide) -> (u8, u8, u8, u8) {
+    pub(crate) fn castle_piece_squares(color: Color, side: CastleSide) -> (u8, u8, u8, u8) {
         match (color, side) {
             (Color::White, CastleSide::King) => (3, 1, 0, 2), // e1→g1, h1→f1
             (Color::White, CastleSide::Queen) => (3, 5, 7, 4), // e1→c1, a1→d1

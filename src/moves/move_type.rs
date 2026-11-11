@@ -46,6 +46,36 @@ impl Move {
         }
     }
 
+    /// Encodes the move in 14 bits, enough to identify it among the legal moves of a position:
+    ///   bits 0-5  -> from square
+    ///   bits 6-11 -> to square (for castling: the king's squares)
+    ///   bits 12-13 -> promotion piece (0 = queen, 1 = rook, 2 = bishop, 3 = knight)
+    ///
+    /// Never returns 0 (from and to are always different), so 0 can mean "no move".
+    pub fn to_compact(&self) -> u16 {
+        let (from, to, promo) = match self.action {
+            MoveKind::Standard { from, to, .. } | MoveKind::EnPassant { from, to } => (from, to, 0),
+            MoveKind::Castle(side) => {
+                let (king_from, king_to, _, _) =
+                    Board::castle_piece_squares(self.piece.color, side);
+                (king_from, king_to, 0)
+            }
+            MoveKind::Promote {
+                from, to, to_piece, ..
+            } => {
+                let promo = match to_piece {
+                    PieceKind::Rook => 1,
+                    PieceKind::Bishop => 2,
+                    PieceKind::Knight => 3,
+                    _ => 0,
+                };
+                (from, to, promo)
+            }
+        };
+
+        from as u16 | (to as u16) << 6 | promo << 12
+    }
+
     pub fn is_capture(&self) -> bool {
         match self.action {
             MoveKind::Castle(_) => false,

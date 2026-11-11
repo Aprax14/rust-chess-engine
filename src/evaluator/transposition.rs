@@ -43,6 +43,12 @@ pub enum Bound {
 pub struct ProbeResult {
     pub score: i32,
     pub bound: Bound,
+    /// Depth the entry was searched at: the score is reliable only if it is
+    /// at least the depth currently requested.
+    pub depth: i32,
+    /// Best move found in this position (see `Move::to_compact`), 0 if unknown.
+    /// Useful for move ordering even when the entry is not deep enough.
+    pub best_move: u16,
 }
 
 /// One slot in the transposition table.
@@ -57,7 +63,7 @@ pub struct ProbeResult {
 ///   bits 0-1 ->  Bound 2 bits for 3 variants
 ///   bits 2-33 -> score reinterpreted as u32
 ///   bits 34-49 -> depth reinterpreted as u16
-///   bits 50-63 -> unused
+///   bits 50-63 -> best move in compact form (14 bits, 0 = no move)
 #[derive(Debug, Default)]
 struct TtSlot {
     key: AtomicU64,
@@ -73,7 +79,7 @@ impl TtSlot {
     }
 }
 
-fn compress_to_u64(depth: i32, score: i32, bound: Bound) -> u64 {
+fn compress_to_u64(depth: i32, score: i32, bound: Bound, best_move: u16) -> u64 {
     let bound_bits = match bound {
         Bound::Exact => 0u64,
         Bound::Lower => 1u64,
@@ -82,10 +88,12 @@ fn compress_to_u64(depth: i32, score: i32, bound: Bound) -> u64 {
     let score_bits = (score as u32) as u64;
     let depth_bits = (depth as u16) as u64;
 
-    bound_bits | (score_bits << 2) | (depth_bits << 34)
+    let move_bits = (best_move & 0x3FFF) as u64;
+
+    bound_bits | (score_bits << 2) | (depth_bits << 34) | (move_bits << 50)
 }
 
-fn unpack(data: u64) -> (i32, i32, Bound) {
+fn unpack(data: u64) -> (i32, i32, Bound, u16) {
     let bound = match data & 0b11 {
         0 => Bound::Exact,
         1 => Bound::Lower,
@@ -93,8 +101,9 @@ fn unpack(data: u64) -> (i32, i32, Bound) {
     };
     let score = (data >> 2) as u32 as i32;
     let depth = (data >> 34) as u16 as i16 as i32;
+    let best_move = (data >> 50) as u16;
 
-    (depth, score, bound)
+    (depth, score, bound, best_move)
 }
 
 /// A lockless transposition table that can be shared across threads without
@@ -132,9 +141,9 @@ impl TranspositionTable {
         }
     }
 
-    /// Returns the stored result if the entry matches `hash` and was computed
-    /// at least as deep as the requested `depth`. `ply` is the distance from the root.
-    pub fn probe(&self, hash: u64, depth: i32, ply: i32) -> Option<ProbeResult> {
+    /// Returns the stored entry if it matches `hash`, whatever its depth: the caller
+    /// must check `depth` before trusting the score. `ply` is the distance from the root.
+    pub fn probe(&self, hash: u64, ply: i32) -> Option<ProbeResult> {
         let slot = &self.table[hash as usize & self.mask];
         let key = slot.key.load(Ordering::Relaxed);
         let data = slot.data.load(Ordering::Relaxed);
@@ -142,14 +151,13 @@ impl TranspositionTable {
         if key ^ data != hash {
             return None;
         }
-        let (entry_depth, score, bound) = unpack(data);
-        if entry_depth < depth {
-            return None;
-        }
+        let (depth, score, bound, best_move) = unpack(data);
 
         Some(ProbeResult {
             score: score_from_tt(score, ply),
             bound,
+            depth,
+            best_move,
         })
     }
 
@@ -157,21 +165,26 @@ impl TranspositionTable {
     /// the same hash is only overwritten if the new depth is >= the stored depth.
     /// The store itself is lock-free: data is written before key so a concurrent
     /// reader will fail the XOR check during the brief inconsistent window.
-    /// `ply` is the distance from the root.
-    pub fn store(&self, hash: u64, depth: i32, ply: i32, score: i32, bound: Bound) {
+    /// `ply` is the distance from the root. `best_move` is in compact form, 0 if unknown:
+    /// in that case the best move already stored for the same position is kept.
+    pub fn store(&self, hash: u64, depth: i32, ply: i32, score: i32, bound: Bound, best_move: u16) {
         let slot = &self.table[hash as usize & self.mask];
 
         // Depth-preferred replacement: only overwrite if new depth is at least as deep.
         let existing_key = slot.key.load(Ordering::Relaxed);
         let existing_data = slot.data.load(Ordering::Relaxed);
+        let mut best_move = best_move;
         if existing_key ^ existing_data == hash {
-            let (existing_depth, _, _) = unpack(existing_data);
+            let (existing_depth, _, _, existing_move) = unpack(existing_data);
             if depth < existing_depth {
                 return;
             }
+            if best_move == 0 {
+                best_move = existing_move;
+            }
         }
 
-        let data = compress_to_u64(depth, score_to_tt(score, ply), bound);
+        let data = compress_to_u64(depth, score_to_tt(score, ply), bound, best_move);
         // Write data before key so a concurrent reader sees key ^ data != hash
         // during the brief window between the two stores.
         slot.data.store(data, Ordering::Relaxed);

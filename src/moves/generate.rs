@@ -69,6 +69,17 @@ impl Moves {
         self.list[index].piece_move
     }
 
+    /// Gives the highest priority to the move with the given compact encoding
+    /// (see [`Move::to_compact`]) so that it is searched first.
+    pub fn prioritize(&mut self, compact_move: u16) {
+        if let Some(rated) = self.list[..self.len as usize]
+            .iter_mut()
+            .find(|rated| rated.piece_move.to_compact() == compact_move)
+        {
+            rated.rating = i32::MAX;
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
