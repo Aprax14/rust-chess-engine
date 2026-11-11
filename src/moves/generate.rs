@@ -83,7 +83,7 @@ impl Board {
     /// the rating is given according to MVV LVA:
     /// Most Valuable Victim Less Valuable Attacker.
     ///
-    /// When only_critical is true only captures and stop-checks get generated.
+    /// When only_critical is true only captures, queen promotions and stop-checks get generated.
     /// Discards the moves that leaves the moving side king in check (illegal).
     pub fn generate_moves(&self, only_critical: bool) -> Moves {
         let mut moves = Moves::new();
@@ -122,11 +122,16 @@ impl Board {
                         continue;
                     }
 
-                    // save promotions only if it's not required to generate only critical moves.
-                    // only_critical == true => save only captures and stop-checks
-                    if current_move.is_promotion() && !only_critical {
+                    // Promotions are always generated as `Promote` moves, also in critical mode:
+                    // they change material as much as a capture, so quiescence must see them.
+                    // In critical mode only the queen promotion is kept, under-promotions
+                    // are almost never relevant for a tactical search.
+                    if current_move.is_promotion() {
                         for piece_kind in PieceKind::iter() {
                             if piece_kind == PieceKind::Pawn || piece_kind == PieceKind::King {
+                                continue;
+                            }
+                            if only_critical && !in_check && piece_kind != PieceKind::Queen {
                                 continue;
                             }
                             let promotion = Move {
