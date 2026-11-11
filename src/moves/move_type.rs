@@ -60,10 +60,22 @@ impl Move {
 #[derive(Debug, Clone)]
 pub struct Scenario {
     pub board: Board,
+    /// `board.moves_count` when the search started: the root of the search tree.
+    root_moves_count: u32,
 }
 
 impl Scenario {
+    /// Creates a scenario whose search root is the given board.
     pub fn new(board: Board) -> Self {
-        Self { board }
+        Self {
+            root_moves_count: board.moves_count,
+            board,
+        }
+    }
+
+    /// Number of plies (half-moves, null moves included) played since the root of the search.
+    /// Used to score mates by distance: a closer mate is worth more than a farther one.
+    pub fn plies_from_root(&self) -> i32 {
+        (self.board.moves_count - self.root_moves_count) as i32
     }
 }

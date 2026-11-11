@@ -9,13 +9,30 @@ use crate::moves::generate::RatedMove;
 use crate::moves::move_type::{Move, Scenario};
 
 use super::static_eval::StaticEval;
-use super::transposition::{Bound, TranspositionTable};
+use super::transposition::{Bound, TERMINAL_DEPTH, TranspositionTable};
 
 /// Depth reduction used for null move pruning.
 const NULL_MOVE_R: i32 = 2;
 
 /// How many additional plies the quiescence search explores beyond the main horizon.
 const QUIESCENCE_DEPTH: i32 = 4;
+
+/// Score of a checkmate delivered at the root. A mate found `ply` plies away from the
+/// root is scored `MATE_SCORE - ply` (or its negation), so that shorter mates are
+/// preferred and longer defences are chosen when getting mated.
+/// Must stay far above any static evaluation and fit in the TT score bits.
+pub const MATE_SCORE: i32 = 1_000_000;
+
+/// Any score whose absolute value is above this threshold is a mate score.
+pub const MATE_THRESHOLD: i32 = MATE_SCORE - 1_000;
+
+/// Score for the side to move being checkmated, from White's point of view.
+fn mated_score(turn: Color, ply: i32) -> i32 {
+    match turn {
+        Color::White => -(MATE_SCORE - ply),
+        Color::Black => MATE_SCORE - ply,
+    }
+}
 
 impl Scenario {
     pub fn minimax_alpha_beta(
@@ -30,10 +47,11 @@ impl Scenario {
         // (exact / lower bound / upper bound) before storing it in the TT.
         let alpha_orig = alpha;
         let beta_orig = beta;
+        let ply = self.plies_from_root();
 
         // Probe the transposition table. An exact hit lets us return immediately;
         // a bound hit narrows the alpha-beta window and may still cause a cutoff.
-        if let Some(result) = tt.probe(self.board.hash, depth) {
+        if let Some(result) = tt.probe(self.board.hash, depth, ply) {
             match result.bound {
                 Bound::Exact => return result.score,
                 Bound::Lower => alpha = alpha.max(result.score),
@@ -47,15 +65,13 @@ impl Scenario {
         let mut available_moves = self.board.generate_moves(false);
 
         if available_moves.is_empty() {
-            let score = if self.board.position.is_in_check(Color::White) {
-                i32::MIN
-            } else if self.board.position.is_in_check(Color::Black) {
-                i32::MAX
+            let score = if self.board.position.is_in_check(self.board.turn) {
+                mated_score(self.board.turn, ply)
             } else {
-                0
+                0 // stalemate
             };
             // Terminal nodes are exact at any depth.
-            tt.store(self.board.hash, i32::MAX, score, Bound::Exact);
+            tt.store(self.board.hash, TERMINAL_DEPTH, ply, score, Bound::Exact);
             return score;
         }
 
@@ -83,13 +99,13 @@ impl Scenario {
                 match self.board.turn {
                     Color::White => {
                         if null_eval >= beta {
-                            tt.store(self.board.hash, depth, beta, Bound::Lower);
+                            tt.store(self.board.hash, depth, ply, beta, Bound::Lower);
                             return beta;
                         }
                     }
                     Color::Black => {
                         if null_eval <= alpha {
-                            tt.store(self.board.hash, depth, alpha, Bound::Upper);
+                            tt.store(self.board.hash, depth, ply, alpha, Bound::Upper);
                             return alpha;
                         }
                     }
@@ -126,7 +142,7 @@ impl Scenario {
                 } else {
                     Bound::Exact
                 };
-                tt.store(self.board.hash, depth, max_eval, bound);
+                tt.store(self.board.hash, depth, ply, max_eval, bound);
                 max_eval
             }
             Color::Black => {
@@ -158,7 +174,7 @@ impl Scenario {
                 } else {
                     Bound::Exact
                 };
-                tt.store(self.board.hash, depth, min_eval, bound);
+                tt.store(self.board.hash, depth, ply, min_eval, bound);
                 min_eval
             }
         }
@@ -196,6 +212,8 @@ impl Scenario {
 
                     // Clone the board once per for thread isolation.
                     // All deeper recursive calls use make/unmake - no further clones.
+                    // The scenario is created before the root move, so the search root
+                    // stays this position and the root move counts as the first ply.
                     let mut scenario = Scenario::new(self.board.clone());
                     let _undo = scenario.board.make_move(player_move);
 
@@ -275,10 +293,7 @@ impl Scenario {
         let mut available_moves = self.board.generate_moves(true);
         if available_moves.is_empty() {
             if self.board.position.is_in_check(self.board.turn) {
-                return match self.board.turn {
-                    Color::White => i32::MIN,
-                    Color::Black => i32::MAX,
-                };
+                return mated_score(self.board.turn, self.plies_from_root());
             }
             // No captures available and not in check: return the standing pat score.
             return match self.board.turn {

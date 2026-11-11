@@ -1,5 +1,34 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use super::evaluation::MATE_THRESHOLD;
+
+/// Depth used to store terminal nodes (checkmate / stalemate): their score is exact
+/// at any depth. Must fit in the 16 signed bits used to store the depth.
+pub const TERMINAL_DEPTH: i32 = i16::MAX as i32;
+
+/// Mate scores are relative to the root (`MATE_SCORE - ply`), but the same position
+/// can be reached at different plies. Before storing, convert them to be relative to
+/// the current node; after probing, convert them back to be relative to the root.
+fn score_to_tt(score: i32, ply: i32) -> i32 {
+    if score > MATE_THRESHOLD {
+        score + ply
+    } else if score < -MATE_THRESHOLD {
+        score - ply
+    } else {
+        score
+    }
+}
+
+fn score_from_tt(score: i32, ply: i32) -> i32 {
+    if score > MATE_THRESHOLD {
+        score - ply
+    } else if score < -MATE_THRESHOLD {
+        score + ply
+    } else {
+        score
+    }
+}
+
 /// Describes the reliability of a stored score relative to the true minimax value.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Bound {
@@ -95,8 +124,8 @@ impl TranspositionTable {
     }
 
     /// Returns the stored result if the entry matches `hash` and was computed
-    /// at least as deep as the requested `depth`.
-    pub fn probe(&self, hash: u64, depth: i32) -> Option<ProbeResult> {
+    /// at least as deep as the requested `depth`. `ply` is the distance from the root.
+    pub fn probe(&self, hash: u64, depth: i32, ply: i32) -> Option<ProbeResult> {
         let slot = &self.table[hash as usize & self.mask];
         let key = slot.key.load(Ordering::Relaxed);
         let data = slot.data.load(Ordering::Relaxed);
@@ -109,14 +138,18 @@ impl TranspositionTable {
             return None;
         }
 
-        Some(ProbeResult { score, bound })
+        Some(ProbeResult {
+            score: score_from_tt(score, ply),
+            bound,
+        })
     }
 
     /// Stores a result.  Uses depth-preferred replacement: an existing entry for
     /// the same hash is only overwritten if the new depth is >= the stored depth.
     /// The store itself is lock-free: data is written before key so a concurrent
     /// reader will fail the XOR check during the brief inconsistent window.
-    pub fn store(&self, hash: u64, depth: i32, score: i32, bound: Bound) {
+    /// `ply` is the distance from the root.
+    pub fn store(&self, hash: u64, depth: i32, ply: i32, score: i32, bound: Bound) {
         let slot = &self.table[hash as usize & self.mask];
 
         // Depth-preferred replacement: only overwrite if new depth is at least as deep.
@@ -129,7 +162,7 @@ impl TranspositionTable {
             }
         }
 
-        let data = compress_to_u64(depth, score, bound);
+        let data = compress_to_u64(depth, score_to_tt(score, ply), bound);
         // Write data before key so a concurrent reader sees key ^ data != hash
         // during the brief window between the two stores.
         slot.data.store(data, Ordering::Relaxed);
