@@ -8,6 +8,7 @@ use corman::components::{
     castle::CastleSide,
     pieces::{Color, PieceKind},
 };
+use corman::evaluator::transposition::TranspositionTable;
 use corman::moves::move_type::{Move, MoveKind, Scenario};
 
 const ENGINE_NAME: &str = "corman"; // my cats: Cornelia and Norman
@@ -135,33 +136,36 @@ fn parse_uci_move(board: &Board, uci: &str) -> Option<Move> {
 
 /// Runs the engine search at the given depth and returns the best (Move, score)
 /// pair, or None if there are no legal moves (checkmate / stalemate).
-fn search_at_depth(board: &Board, depth: i32) -> Option<(Move, i32)> {
+fn search_at_depth(board: &Board, depth: i32, tt: &TranspositionTable) -> Option<(Move, i32)> {
     let scenario = Scenario::new(board.clone());
     let (tx, rx) = mpsc::channel::<(Move, i32)>();
     let is_white = board.turn == Color::White;
 
-    thread::spawn(move || {
-        scenario.parallel_minimax_alpha_beta(depth, tx);
-    });
+    // Scoped thread: it can borrow the TT and it is joined before returning.
+    thread::scope(|s| {
+        s.spawn(move || {
+            scenario.parallel_minimax_alpha_beta(depth, tt, tx);
+        });
 
-    let mut best: Option<(Move, i32)> = None;
-    for (m, eval) in rx {
-        let better = match best {
-            None => true,
-            Some((_, prev)) => {
-                if is_white {
-                    eval > prev
-                } else {
-                    eval < prev
+        let mut best: Option<(Move, i32)> = None;
+        for (m, eval) in rx {
+            let better = match best {
+                None => true,
+                Some((_, prev)) => {
+                    if is_white {
+                        eval > prev
+                    } else {
+                        eval < prev
+                    }
                 }
+            };
+            if better {
+                best = Some((m, eval));
             }
-        };
-        if better {
-            best = Some((m, eval));
         }
-    }
 
-    best
+        best
+    })
 }
 
 /// Iterative-deepening search within `budget`.
@@ -171,7 +175,7 @@ fn search_at_depth(board: &Board, depth: i32) -> Option<(Move, i32)> {
 /// The engine has no mid-search stop mechanism, so each iteration runs to
 /// completion. The heuristic is: skip the next iteration if we have already
 /// used more than half the budget (the next depth usually takes ~5× longer).
-fn iterative_deepening(board: &Board, budget: Duration) -> Option<Move> {
+fn iterative_deepening(board: &Board, budget: Duration, tt: &TranspositionTable) -> Option<Move> {
     let start = Instant::now();
     let mut best_move: Option<Move> = None;
 
@@ -185,7 +189,7 @@ fn iterative_deepening(board: &Board, budget: Duration) -> Option<Move> {
             break;
         }
 
-        match search_at_depth(board, depth) {
+        match search_at_depth(board, depth, tt) {
             Some((m, eval)) => {
                 // Engine uses 1000 per pawn; UCI expects centipawns (100/pawn).
                 let cp = eval / 10;
@@ -244,7 +248,7 @@ fn handle_position(tokens: &[&str], current_board: &mut Board) {
     *current_board = board;
 }
 
-fn handle_go(board: &Board, tokens: &[&str]) {
+fn handle_go(board: &Board, tokens: &[&str], tt: &TranspositionTable) {
     let mut fixed_depth: Option<i32> = None;
     let mut movetime_ms: Option<u64> = None;
     let mut wtime: Option<u64> = None; // white clock time left
@@ -290,7 +294,7 @@ fn handle_go(board: &Board, tokens: &[&str]) {
 
     let best_move = if let Some(d) = fixed_depth {
         // Fixed-depth search: run once, no time management.
-        search_at_depth(board, d).map(|(m, eval)| {
+        search_at_depth(board, d, tt).map(|(m, eval)| {
             let cp = eval / 10;
             uci_send!("info depth {} score cp {}", d, cp);
             m
@@ -314,7 +318,7 @@ fn handle_go(board: &Board, tokens: &[&str]) {
             (my_time / 30).max(100) + my_inc / 2
         };
 
-        iterative_deepening(board, Duration::from_millis(budget_ms))
+        iterative_deepening(board, Duration::from_millis(budget_ms), tt)
     };
 
     match best_move {
@@ -333,6 +337,9 @@ fn main() {
 
     let stdin = io::stdin();
     let mut current_board = Board::new_game();
+    // Created once and reused by every search: results of previous iterations and
+    // previous moves are still valid and speed up the next searches.
+    let tt = TranspositionTable::new();
 
     for line in stdin.lock().lines() {
         let line = match line {
@@ -356,12 +363,13 @@ fn main() {
             }
             "ucinewgame" => {
                 current_board = Board::new_game();
+                tt.clear();
             }
             "position" => {
                 handle_position(&tokens, &mut current_board);
             }
             "go" => {
-                handle_go(&current_board, &tokens[1..]);
+                handle_go(&current_board, &tokens[1..], &tt);
             }
             // "stop" is not supported yet: the search runs to completion.
             // Ignore it silently so the GUI does not hang.

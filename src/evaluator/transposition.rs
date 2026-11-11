@@ -123,6 +123,15 @@ impl TranspositionTable {
         }
     }
 
+    /// Empties the table. To be called when a new game starts: entries from the
+    /// previous game would still be valid, but they only waste space.
+    pub fn clear(&self) {
+        for slot in &self.table {
+            slot.key.store(0, Ordering::Relaxed);
+            slot.data.store(0, Ordering::Relaxed);
+        }
+    }
+
     /// Returns the stored result if the entry matches `hash` and was computed
     /// at least as deep as the requested `depth`. `ply` is the distance from the root.
     pub fn probe(&self, hash: u64, depth: i32, ply: i32) -> Option<ProbeResult> {

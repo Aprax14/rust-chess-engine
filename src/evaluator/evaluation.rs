@@ -180,7 +180,14 @@ impl Scenario {
         }
     }
 
-    pub fn parallel_minimax_alpha_beta(&self, depth: i32, tx: Sender<(Move, i32)>) {
+    /// Searches every root move in parallel. The transposition table is owned by the caller
+    /// so that it survives across iterative deepening iterations and across moves.
+    pub fn parallel_minimax_alpha_beta(
+        &self,
+        depth: i32,
+        tt: &TranspositionTable,
+        tx: Sender<(Move, i32)>,
+    ) {
         let available_moves = self.board.generate_moves(false);
 
         let best_eval = AtomicI32::new(match self.board.turn {
@@ -190,10 +197,6 @@ impl Scenario {
         let main_alpha = AtomicI32::new(i32::MIN);
         let main_beta = AtomicI32::new(i32::MAX);
         let stop_signal = AtomicBool::new(false);
-
-        // Single shared TT for all threads. The lockless implementation handles
-        // concurrent reads and writes safely via the XOR integrity check.
-        let tt = TranspositionTable::new();
 
         available_moves.list[..available_moves.len()]
             .par_iter()
@@ -221,7 +224,7 @@ impl Scenario {
                         depth - 1,
                         main_alpha.load(Ordering::Acquire),
                         main_beta.load(Ordering::Acquire),
-                        &tt,
+                        tt,
                         true,
                     );
 
